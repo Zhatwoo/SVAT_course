@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { getClientDb } from "../firebase/client";
 import type { UserProfile } from "../types";
 
@@ -14,4 +14,30 @@ export async function getAllUsers(): Promise<UserProfile[]> {
     uid: docSnap.id,
     ...docSnap.data(),
   })) as UserProfile[];
+}
+
+export async function updateUserProfile(
+  uid: string,
+  data: Partial<Pick<UserProfile, "displayName" | "role" | "isBlocked" | "blockedReason">>,
+) {
+  await setDoc(
+    doc(getClientDb(), "users", uid),
+    {
+      ...data,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+export async function setUserBlocked(
+  uid: string,
+  blocked: boolean,
+  reason?: string,
+) {
+  await updateDoc(doc(getClientDb(), "users", uid), {
+    isBlocked: blocked,
+    blockedReason: blocked ? reason ?? "Blocked by admin" : "",
+    updatedAt: serverTimestamp(),
+  });
 }

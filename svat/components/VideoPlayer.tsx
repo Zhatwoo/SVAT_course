@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { UserSecurityEventType } from "@/lib/types";
 
 declare global {
   interface Window {
@@ -40,6 +41,11 @@ interface YTPlayer {
 interface VideoPlayerProps {
   videoId?: string;
   secureUrl?: string;
+  watermarkText?: string;
+  onSecurityEvent?: (
+    eventType: UserSecurityEventType,
+    context?: Record<string, unknown>,
+  ) => void;
   onComplete?: () => void;
   onProgress?: (percent: number) => void;
 }
@@ -71,6 +77,8 @@ function loadYouTubeAPI(): Promise<void> {
 export default function VideoPlayer({
   videoId,
   secureUrl,
+  watermarkText,
+  onSecurityEvent,
   onComplete,
   onProgress,
 }: VideoPlayerProps) {
@@ -84,6 +92,8 @@ export default function VideoPlayer({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [captureBlocked, setCaptureBlocked] = useState(false);
+  const captureTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const formatTime = useCallback((seconds: number) => {
     const safe = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
@@ -252,15 +262,107 @@ export default function VideoPlayer({
     event.preventDefault();
   }, []);
 
+  const triggerCaptureBlock = useCallback(
+    (eventType: UserSecurityEventType, context?: Record<string, unknown>) => {
+    setCaptureBlocked(true);
+    if (secureUrl) {
+      nativeVideoRef.current?.pause();
+    } else {
+      playerRef.current?.pauseVideo();
+    }
+    if (captureTimeoutRef.current) {
+      clearTimeout(captureTimeoutRef.current);
+    }
+    captureTimeoutRef.current = setTimeout(() => {
+      setCaptureBlocked(false);
+    }, 8000);
+      onSecurityEvent?.(eventType, context);
+    },
+    [secureUrl, onSecurityEvent],
+  );
+
+  useEffect(() => {
+    const shouldBlockCaptureShortcut = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      const printLikeKey = key === "printscreen" || key === "snapshot";
+      const macShot = event.metaKey && event.shiftKey && ["3", "4", "5"].includes(key);
+      const windowsSnip = event.shiftKey && key === "s" && (event.metaKey || event.ctrlKey);
+      const altPrint = event.altKey && printLikeKey;
+      return printLikeKey || macShot || windowsSnip || altPrint;
+    };
+
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if (shouldBlockCaptureShortcut(event)) {
+        event.preventDefault();
+        triggerCaptureBlock("screenshot_attempt", {
+          key: event.key,
+          altKey: event.altKey,
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          shiftKey: event.shiftKey,
+        });
+      }
+    };
+
+    const handleGlobalKeyUp = (event: KeyboardEvent) => {
+      if (shouldBlockCaptureShortcut(event)) {
+        event.preventDefault();
+        triggerCaptureBlock("screenshot_attempt", {
+          key: event.key,
+          altKey: event.altKey,
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          shiftKey: event.shiftKey,
+        });
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        onSecurityEvent?.("visibility_hidden");
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    window.addEventListener("keyup", handleGlobalKeyUp);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown);
+      window.removeEventListener("keyup", handleGlobalKeyUp);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      if (captureTimeoutRef.current) {
+        clearTimeout(captureTimeoutRef.current);
+        captureTimeoutRef.current = null;
+      }
+    };
+  }, [triggerCaptureBlock, onSecurityEvent]);
+
   const handleKeyDownCapture = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    const key = event.key.toLowerCase();
+    const printLikeKey = key === "printscreen" || key === "snapshot";
+    const macShot = event.metaKey && event.shiftKey && ["3", "4", "5"].includes(key);
+    const windowsSnip = event.shiftKey && key === "s" && (event.metaKey || event.ctrlKey);
+    const altPrint = event.altKey && printLikeKey;
+    if (printLikeKey || macShot || windowsSnip || altPrint) {
+      event.preventDefault();
+      triggerCaptureBlock("screenshot_attempt", {
+        key: event.key,
+        altKey: event.altKey,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+      });
+      return;
+    }
+
     const isCtrlOrMeta = event.ctrlKey || event.metaKey;
     if (!isCtrlOrMeta) return;
 
-    const key = event.key.toLowerCase();
     if (key === "c" || key === "x" || key === "u" || key === "s") {
       event.preventDefault();
     }
-  }, []);
+  }, [triggerCaptureBlock]);
 
   const handleSeek = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     if (secureUrl) {
@@ -306,6 +408,25 @@ export default function VideoPlayer({
         />
       ) : (
         <div ref={containerRef} className="h-full w-full" />
+      )}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-[6] flex items-center justify-center overflow-hidden"
+      >
+        <div
+          className="rotate-[-24deg] text-xl font-bold tracking-[0.25em] text-white/30"
+        >
+          {(watermarkText || "ONE TRADERS SECURED CONTENT") + " • "}
+          {(watermarkText || "ONE TRADERS SECURED CONTENT") + " • "}
+          {(watermarkText || "ONE TRADERS SECURED CONTENT")}
+        </div>
+      </div>
+      {captureBlocked && (
+        <div className="absolute inset-0 z-[30] flex items-center justify-center bg-black">
+          <span className="text-sm font-semibold tracking-wider text-white/80">
+            Screen capture blocked by ONETRADERS
+          </span>
+        </div>
       )}
       <div className="absolute inset-0 z-[5]" aria-hidden="true" />
       <div className="absolute inset-x-4 bottom-4 z-10 flex items-center gap-3 rounded-lg bg-black/60 px-3 py-2 text-white backdrop-blur-sm">

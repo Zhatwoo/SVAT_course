@@ -20,11 +20,12 @@ export async function POST(request: NextRequest) {
     }
 
     const episodeSnap = await getAdminDb().collection("episodes").doc(body.episodeId).get();
-    if (!episodeSnap.exists()) {
+    if (!episodeSnap.exists) {
       return NextResponse.json({ error: "Episode not found" }, { status: 404 });
     }
 
-    const secureVideoPath = episodeSnap.data().secureVideoPath as string | undefined;
+    const episodeData = episodeSnap.data();
+    const secureVideoPath = episodeData?.secureVideoPath as string | undefined;
     if (!secureVideoPath) {
       return NextResponse.json({ error: "No secure video configured" }, { status: 404 });
     }

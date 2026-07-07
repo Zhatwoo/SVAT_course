@@ -15,7 +15,9 @@ export type AdminActivityLogEntity =
   | "course"
   | "chapter"
   | "episode"
-  | "community_link";
+  | "community_link"
+  | "user"
+  | "security_event";
 
 export interface AdminActivityLog {
   id: string;
@@ -33,6 +35,24 @@ export interface UserProfile {
   email: string;
   displayName: string;
   role: UserRole;
+  isBlocked?: boolean;
+  blockedReason?: string;
+  createdAt: Timestamp;
+}
+
+export type UserSecurityEventType =
+  | "screenshot_attempt"
+  | "screen_record_suspected"
+  | "visibility_hidden";
+
+export interface UserSecurityEvent {
+  id: string;
+  userId: string;
+  userEmail?: string;
+  episodeId?: string;
+  courseId?: string;
+  eventType: UserSecurityEventType;
+  context?: Record<string, unknown>;
   createdAt: Timestamp;
 }
 

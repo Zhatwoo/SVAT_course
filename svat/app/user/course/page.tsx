@@ -15,6 +15,7 @@ import {
   markEpisodeComplete,
   updateWatchProgress,
 } from "@/lib/firestore/progress";
+import { logUserSecurityEvent } from "@/lib/firestore/userSecurityEvents";
 import type { Chapter, EpisodeWithStatus } from "@/lib/types";
 
 function EpisodeButton({
@@ -213,6 +214,28 @@ export default function CoursePage() {
     [user, activeEpisode],
   );
 
+  const handleSecurityEvent = useCallback(
+    async (
+      eventType: "screenshot_attempt" | "screen_record_suspected" | "visibility_hidden",
+      context?: Record<string, unknown>,
+    ) => {
+      if (!user || !activeEpisode) return;
+      try {
+        await logUserSecurityEvent({
+          eventType,
+          userId: user.uid,
+          userEmail: user.email ?? undefined,
+          episodeId: activeEpisode.id,
+          courseId: activeEpisode.courseId,
+          context,
+        });
+      } catch {
+        // non-blocking
+      }
+    },
+    [user, activeEpisode],
+  );
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -302,6 +325,8 @@ export default function CoursePage() {
                     onProgress={handleProgress}
                     secureUrl={secureVideoUrl ?? undefined}
                     videoId={secureVideoUrl ? undefined : activeEpisode.youtubeVideoId}
+                    watermarkText="ONETRADERS"
+                    onSecurityEvent={handleSecurityEvent}
                   />
                 </div>
 

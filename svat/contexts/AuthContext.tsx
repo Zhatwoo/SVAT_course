@@ -117,12 +117,17 @@ export function RouteGuard({
   requiredRole?: UserRole;
   loginPath?: string;
 }) {
-  const { user, role, loading, firebaseReady } = useAuth();
+  const { user, role, profile, loading, firebaseReady, signOut } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (loading) return;
     if (!firebaseReady) return;
+    if (profile?.isBlocked) {
+      void signOut();
+      router.replace(loginPath);
+      return;
+    }
     if (!user) {
       router.replace(loginPath);
       return;
@@ -130,7 +135,7 @@ export function RouteGuard({
     if (requiredRole && role !== requiredRole) {
       router.replace(role === "admin" ? "/admin" : "/user");
     }
-  }, [user, role, loading, firebaseReady, requiredRole, router, loginPath]);
+  }, [user, role, loading, firebaseReady, requiredRole, router, loginPath, profile, signOut]);
 
   if (!firebaseReady) {
     return <>{children}</>;
@@ -146,7 +151,7 @@ export function RouteGuard({
     );
   }
 
-  if (!user || (requiredRole && role !== requiredRole)) {
+  if (!user || profile?.isBlocked || (requiredRole && role !== requiredRole)) {
     return null;
   }
 

@@ -56,7 +56,13 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isOwner(userId) || canManageAdminContent();
       allow create: if isOwner(userId) || canManageAdminContent() || !hasAdmins();
-      allow update: if isOwner(userId) || canManageAdminContent();
+      allow update: if canManageAdminContent()
+        || (
+          isOwner(userId)
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.isBlocked == resource.data.isBlocked
+          && request.resource.data.blockedReason == resource.data.blockedReason
+        );
     }
 
     match /settings/{id} {
@@ -81,6 +87,12 @@ service cloud.firestore {
 
     match /adminActivityLogs/{id} {
       allow read, write: if canManageAdminContent();
+    }
+
+    match /userSecurityEvents/{id} {
+      allow read: if canManageAdminContent();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if canManageAdminContent();
     }
 
     match /userProgress/{id} {
