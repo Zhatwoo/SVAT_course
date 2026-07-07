@@ -73,6 +73,7 @@ export default function AdminPage() {
   const [episodeNumber, setEpisodeNumber] = useState("");
   const [episodeTitle, setEpisodeTitle] = useState("");
   const [duration, setDuration] = useState("");
+  const [secureVideoPath, setSecureVideoPath] = useState("");
 
   const [newCourseTitle, setNewCourseTitle] = useState("");
   const [newChapterTitle, setNewChapterTitle] = useState("");
@@ -188,6 +189,7 @@ export default function AdminPage() {
     setEpisodeNumber("");
     setEpisodeTitle("");
     setDuration("");
+    setSecureVideoPath("");
     setEditingId(null);
   };
 
@@ -218,6 +220,7 @@ export default function AdminPage() {
         episodeNumber: Number(episodeNumber) || courseEpisodeCount + 1,
         order: Number(episodeNumber) || courseEpisodeCount + 1,
         ...(duration.trim() ? { duration: duration.trim() } : {}),
+        ...(secureVideoPath.trim() ? { secureVideoPath: secureVideoPath.trim() } : {}),
       };
 
       if (editingId) {
@@ -285,6 +288,7 @@ export default function AdminPage() {
     setEpisodeNumber(String(episode.episodeNumber));
     setEpisodeTitle(episode.title);
     setDuration(episode.duration ?? "");
+    setSecureVideoPath(episode.secureVideoPath ?? "");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -663,6 +667,22 @@ export default function AdminPage() {
                       type="text"
                       value={duration}
                     />
+                  </div>
+
+                  <div className="space-y-xs">
+                    <label className="font-label-md text-label-md text-on-surface-variant">
+                      Secure Video Path (optional)
+                    </label>
+                    <input
+                      className="w-full rounded-lg border border-outline-variant bg-surface-container-low p-md text-body-sm"
+                      onChange={(e) => setSecureVideoPath(e.target.value)}
+                      placeholder="protected-videos/course-1/episode-3.mp4"
+                      type="text"
+                      value={secureVideoPath}
+                    />
+                    <p className="font-body-sm text-body-sm text-on-surface-variant">
+                      If set, users will stream via short-lived signed URL instead of direct YouTube.
+                    </p>
                   </div>
 
                   <div className="space-y-xs">
