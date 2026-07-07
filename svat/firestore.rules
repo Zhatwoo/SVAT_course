@@ -1,0 +1,95 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function adminRoleData() {
+      return get(/databases/$(database)/documents/role/admin).data;
+    }
+
+    function hasAdmins() {
+      return exists(/databases/$(database)/documents/role/admin);
+    }
+
+    function userProfileData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function profileSaysAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userProfileData().role == "admin";
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/role/admin)
+        && (
+          adminRoleData().members[request.auth.uid] == true
+          || (
+            request.auth.token.email != null
+            && (
+              adminRoleData().members[request.auth.token.email] == true
+              || adminRoleData().members[request.auth.token.email.lower()] == true
+            )
+          )
+        );
+    }
+
+    function canManageAdminContent() {
+      return isAdmin() || profileSaysAdmin();
+    }
+
+    match /role/{roleId} {
+      allow read: if isSignedIn();
+      // Bootstrap: if no admin doc yet, first signed-in user can create role/admin.
+      allow create: if roleId == 'admin' && !hasAdmins() && isSignedIn();
+      allow update, delete: if canManageAdminContent();
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || canManageAdminContent();
+      allow create: if isOwner(userId) || canManageAdminContent() || !hasAdmins();
+      allow update: if isOwner(userId) || canManageAdminContent();
+    }
+
+    match /settings/{id} {
+      allow read: if isSignedIn();
+      allow write: if canManageAdminContent();
+    }
+
+    match /courses/{id} {
+      allow read: if isSignedIn();
+      allow write: if canManageAdminContent();
+    }
+
+    match /chapters/{id} {
+      allow read: if isSignedIn();
+      allow write: if canManageAdminContent();
+    }
+
+    match /episodes/{id} {
+      allow read: if isSignedIn();
+      allow write: if canManageAdminContent();
+    }
+
+    match /adminActivityLogs/{id} {
+      allow read, write: if canManageAdminContent();
+    }
+
+    match /userProgress/{id} {
+      allow read: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid;
+    }
+  }
+}
