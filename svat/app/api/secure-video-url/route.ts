@@ -14,6 +14,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Authorization: only enrolled (access-code-redeemed) students or admins may
+    // request a signed video URL, and blocked accounts are always denied.
+    const requesterSnap = await getAdminDb()
+      .collection("users")
+      .doc(decoded.uid)
+      .get();
+    const requester = requesterSnap.data();
+
+    if (!requester || requester.isBlocked === true) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const isAdmin = requester.role === "admin";
+    const isEnrolled = Boolean(requester.accessCodeUsed);
+    if (!isAdmin && !isEnrolled) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const body = (await request.json()) as { episodeId?: string };
     if (!body.episodeId) {
       return NextResponse.json({ error: "episodeId is required" }, { status: 400 });

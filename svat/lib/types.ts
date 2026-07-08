@@ -17,7 +17,25 @@ export type AdminActivityLogEntity =
   | "episode"
   | "community_link"
   | "user"
-  | "security_event";
+  | "security_event"
+  | "access_code";
+
+export type AccessCodeStatus = "active" | "used" | "revoked";
+
+export interface AccessCode {
+  id: string;
+  code: string;
+  status: AccessCodeStatus;
+  note?: string;
+  assignedToEmail?: string | null;
+  createdByUid: string | null;
+  createdByEmail: string | null;
+  createdAt: Timestamp;
+  usedByUid?: string | null;
+  usedByEmail?: string | null;
+  usedByDisplayName?: string | null;
+  usedAt?: Timestamp | null;
+}
 
 export interface AdminActivityLog {
   id: string;
@@ -35,6 +53,7 @@ export interface UserProfile {
   email: string;
   displayName: string;
   role: UserRole;
+  accessCodeUsed?: string;
   isBlocked?: boolean;
   blockedReason?: string;
   createdAt: Timestamp;
@@ -78,8 +97,8 @@ export interface Episode {
   courseId: string;
   chapterId: string;
   title: string;
-  youtubeUrl: string;
-  youtubeVideoId: string;
+  youtubeUrl?: string;
+  youtubeVideoId?: string;
   secureVideoPath?: string;
   episodeNumber: number;
   order: number;

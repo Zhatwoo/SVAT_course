@@ -1,59 +1,86 @@
+import Link from "next/link";
+
+type DashboardLayout = "admin" | "user-expanded" | "user-collapsed";
+
 interface FooterProps {
   variant?: "default" | "compact";
+  dashboardLayout?: DashboardLayout;
 }
 
-export default function Footer({ variant = "default" }: FooterProps) {
+function footerLayoutClass(dashboardLayout?: DashboardLayout): string {
+  if (!dashboardLayout) return "";
+  if (dashboardLayout === "admin") return "dashboard-footer dashboard-footer--admin";
+  if (dashboardLayout === "user-collapsed") {
+    return "dashboard-footer dashboard-footer--collapsed";
+  }
+  return "dashboard-footer dashboard-footer--expanded";
+}
+
+export default function Footer({
+  variant = "default",
+  dashboardLayout,
+}: FooterProps) {
+  const layoutClass = footerLayoutClass(dashboardLayout);
+
   const links = (
-    <>
-      <a
-        className="font-label-sm text-label-sm text-outline transition-colors hover:text-primary dark:text-outline-variant dark:hover:text-on-primary"
-        href="#"
+    <nav
+      aria-label="Footer"
+      className="flex flex-wrap items-center gap-x-lg gap-y-sm"
+    >
+      <Link
+        className="font-label-sm text-label-sm text-on-surface-variant transition-colors hover:text-secondary dark:hover:text-secondary"
+        href="/terms"
       >
         Terms of Service
-      </a>
-      <a
-        className="font-label-sm text-label-sm text-outline transition-colors hover:text-primary dark:text-outline-variant dark:hover:text-on-primary"
-        href="#"
+      </Link>
+      <Link
+        className="font-label-sm text-label-sm text-on-surface-variant transition-colors hover:text-secondary dark:hover:text-secondary"
+        href="/privacy"
       >
         Privacy Policy
-      </a>
-      <a
-        className="font-label-sm text-label-sm text-outline transition-colors hover:text-primary dark:text-outline-variant dark:hover:text-on-primary"
-        href="#"
-      >
+      </Link>
+      <span className="font-label-sm text-label-sm text-on-surface-variant/60">
         Risk Disclosure
-      </a>
-      <a
-        className="font-label-sm text-label-sm text-outline transition-colors hover:text-primary dark:text-outline-variant dark:hover:text-on-primary"
-        href="#"
-      >
+      </span>
+      <span className="font-label-sm text-label-sm text-on-surface-variant/60">
         Help Center
-      </a>
-    </>
+      </span>
+    </nav>
   );
 
   if (variant === "compact") {
     return (
-      <footer className="z-50 flex w-full flex-col items-center justify-between border-t border-outline-variant bg-surface-container-lowest px-xl py-md md:flex-row">
-        <span className="mb-md font-label-md text-label-md font-bold text-primary md:mb-0">
-          © 2024 One Traders Education.
-        </span>
-        <div className="flex flex-wrap justify-center gap-lg">{links}</div>
+      <footer
+        className={`border-t border-outline-variant bg-surface-container-lowest dark:border-outline dark:bg-surface-container-lowest ${layoutClass}`}
+      >
+        <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-md px-lg py-md md:flex-row md:px-xl">
+          <p className="text-center font-label-sm text-label-sm text-on-surface-variant md:text-left">
+            © {new Date().getFullYear()} One Traders Education
+          </p>
+          {links}
+        </div>
       </footer>
     );
   }
 
   return (
-    <footer className="flex w-full flex-col items-center justify-between border-t border-outline-variant bg-surface-container-lowest px-xl py-lg md:flex-row">
-      <div className="mb-md flex items-center gap-md md:mb-0">
-        <span className="font-label-md text-label-md font-bold text-primary">
-          One Traders
-        </span>
-        <span className="font-body-sm text-body-sm text-on-surface-variant">
-          © 2024 One Traders Education. Professional Trading Terminals.
-        </span>
+    <footer
+      className={`border-t border-outline-variant bg-surface-container-lowest dark:border-outline dark:bg-surface-container-lowest ${layoutClass}`}
+    >
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-md px-lg py-lg md:flex-row md:items-center md:justify-between md:gap-xl md:px-xl">
+        <div className="min-w-0">
+          <p className="font-label-md text-label-md font-bold text-primary dark:text-on-surface">
+            One Traders
+          </p>
+          <p className="mt-xs font-body-sm text-body-sm text-on-surface-variant">
+            © {new Date().getFullYear()} One Traders Education
+          </p>
+          <p className="font-body-sm text-body-sm text-on-surface-variant/80">
+            Professional trading education platform
+          </p>
+        </div>
+        {links}
       </div>
-      <div className="flex gap-xl">{links}</div>
     </footer>
   );
 }

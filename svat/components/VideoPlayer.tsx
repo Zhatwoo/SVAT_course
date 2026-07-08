@@ -94,6 +94,10 @@ export default function VideoPlayer({
   const [duration, setDuration] = useState(0);
   const [captureBlocked, setCaptureBlocked] = useState(false);
   const captureTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playerRootRef = useRef<HTMLDivElement>(null);
+  const isPlayingRef = useRef(false);
+  const onSecurityEventRef = useRef(onSecurityEvent);
+  const lastBlockAtRef = useRef(0);
 
   const formatTime = useCallback((seconds: number) => {
     const safe = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
@@ -109,6 +113,17 @@ export default function VideoPlayer({
   useEffect(() => {
     onProgressRef.current = onProgress;
   }, [onProgress]);
+
+  useEffect(() => {
+    onSecurityEventRef.current = onSecurityEvent;
+  }, [onSecurityEvent]);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+    if (isPlaying) {
+      playerRootRef.current?.focus({ preventScroll: true });
+    }
+  }, [isPlaying]);
 
   const handleComplete = useCallback(() => {
     if (completedRef.current) return;
@@ -264,90 +279,147 @@ export default function VideoPlayer({
 
   const triggerCaptureBlock = useCallback(
     (eventType: UserSecurityEventType, context?: Record<string, unknown>) => {
-    setCaptureBlocked(true);
-    if (secureUrl) {
-      nativeVideoRef.current?.pause();
-    } else {
-      playerRef.current?.pauseVideo();
-    }
-    if (captureTimeoutRef.current) {
-      clearTimeout(captureTimeoutRef.current);
-    }
-    captureTimeoutRef.current = setTimeout(() => {
-      setCaptureBlocked(false);
-    }, 8000);
-      onSecurityEvent?.(eventType, context);
+      const now = Date.now();
+      if (now - lastBlockAtRef.current < 1500) return;
+      lastBlockAtRef.current = now;
+
+      setCaptureBlocked(true);
+      if (secureUrl) {
+        nativeVideoRef.current?.pause();
+      } else {
+        playerRef.current?.pauseVideo();
+      }
+      if (captureTimeoutRef.current) {
+        clearTimeout(captureTimeoutRef.current);
+      }
+      captureTimeoutRef.current = setTimeout(() => {
+        setCaptureBlocked(false);
+      }, 8000);
+      onSecurityEventRef.current?.(eventType, context);
     },
-    [secureUrl, onSecurityEvent],
+    [secureUrl],
   );
+
+  useEffect(() => {
+    const video = nativeVideoRef.current;
+    if (!video || !secureUrl) return;
+
+    const handleVideoPictureInPicture = () => {
+      triggerCaptureBlock("screen_record_suspected", { reason: "video_picture_in_picture" });
+    };
+
+    video.addEventListener("enterpictureinpicture", handleVideoPictureInPicture);
+    return () => {
+      video.removeEventListener("enterpictureinpicture", handleVideoPictureInPicture);
+    };
+  }, [secureUrl, triggerCaptureBlock]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const focusRoot = () => {
+      playerRootRef.current?.focus({ preventScroll: true });
+    };
+    focusRoot();
+    const focusInterval = setInterval(focusRoot, 2000);
+    return () => clearInterval(focusInterval);
+  }, [isPlaying]);
 
   useEffect(() => {
     const shouldBlockCaptureShortcut = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
-      const printLikeKey = key === "printscreen" || key === "snapshot";
+      const code = event.code.toLowerCase();
+      const printLikeKey =
+        key === "printscreen" ||
+        key === "snapshot" ||
+        code === "printscreen" ||
+        event.keyCode === 44;
       const macShot = event.metaKey && event.shiftKey && ["3", "4", "5"].includes(key);
-      const windowsSnip = event.shiftKey && key === "s" && (event.metaKey || event.ctrlKey);
+      const windowsSnip =
+        event.shiftKey &&
+        (key === "s" || code === "keys") &&
+        (event.metaKey || event.ctrlKey);
       const altPrint = event.altKey && printLikeKey;
       return printLikeKey || macShot || windowsSnip || altPrint;
     };
 
-    const handleGlobalKeyDown = (event: KeyboardEvent) => {
-      if (shouldBlockCaptureShortcut(event)) {
-        event.preventDefault();
-        triggerCaptureBlock("screenshot_attempt", {
-          key: event.key,
-          altKey: event.altKey,
-          ctrlKey: event.ctrlKey,
-          metaKey: event.metaKey,
-          shiftKey: event.shiftKey,
-        });
-      }
-    };
-
-    const handleGlobalKeyUp = (event: KeyboardEvent) => {
-      if (shouldBlockCaptureShortcut(event)) {
-        event.preventDefault();
-        triggerCaptureBlock("screenshot_attempt", {
-          key: event.key,
-          altKey: event.altKey,
-          ctrlKey: event.ctrlKey,
-          metaKey: event.metaKey,
-          shiftKey: event.shiftKey,
-        });
-      }
+    const handleCaptureShortcut = (event: KeyboardEvent) => {
+      if (!shouldBlockCaptureShortcut(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      triggerCaptureBlock("screenshot_attempt", {
+        key: event.key,
+        code: event.code,
+        altKey: event.altKey,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+      });
     };
 
     const handleVisibility = () => {
-      if (document.hidden) {
-        onSecurityEvent?.("visibility_hidden");
+      if (!document.hidden) return;
+      if (isPlayingRef.current) {
+        triggerCaptureBlock("screen_record_suspected", { reason: "visibility_hidden" });
+        return;
       }
+      onSecurityEventRef.current?.("visibility_hidden");
     };
 
-    window.addEventListener("keydown", handleGlobalKeyDown);
-    window.addEventListener("keyup", handleGlobalKeyUp);
+    const handleBlur = () => {
+      if (!isPlayingRef.current || document.hidden) return;
+      triggerCaptureBlock("screen_record_suspected", { reason: "window_blur" });
+    };
+
+    const handlePictureInPicture = () => {
+      if (!document.pictureInPictureElement) return;
+      triggerCaptureBlock("screen_record_suspected", { reason: "picture_in_picture" });
+    };
+
+    const captureOpts: AddEventListenerOptions = { capture: true };
+    document.addEventListener("keydown", handleCaptureShortcut, captureOpts);
+    document.addEventListener("keyup", handleCaptureShortcut, captureOpts);
+    window.addEventListener("keydown", handleCaptureShortcut, captureOpts);
+    window.addEventListener("keyup", handleCaptureShortcut, captureOpts);
     document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("blur", handleBlur);
+    document.addEventListener("enterpictureinpicture", handlePictureInPicture);
+    document.addEventListener("leavepictureinpicture", handlePictureInPicture);
 
     return () => {
-      window.removeEventListener("keydown", handleGlobalKeyDown);
-      window.removeEventListener("keyup", handleGlobalKeyUp);
+      document.removeEventListener("keydown", handleCaptureShortcut, captureOpts);
+      document.removeEventListener("keyup", handleCaptureShortcut, captureOpts);
+      window.removeEventListener("keydown", handleCaptureShortcut, captureOpts);
+      window.removeEventListener("keyup", handleCaptureShortcut, captureOpts);
       document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("blur", handleBlur);
+      document.removeEventListener("enterpictureinpicture", handlePictureInPicture);
+      document.removeEventListener("leavepictureinpicture", handlePictureInPicture);
       if (captureTimeoutRef.current) {
         clearTimeout(captureTimeoutRef.current);
         captureTimeoutRef.current = null;
       }
     };
-  }, [triggerCaptureBlock, onSecurityEvent]);
+  }, [triggerCaptureBlock]);
 
   const handleKeyDownCapture = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
     const key = event.key.toLowerCase();
-    const printLikeKey = key === "printscreen" || key === "snapshot";
+    const code = event.nativeEvent.code.toLowerCase();
+    const printLikeKey =
+      key === "printscreen" ||
+      key === "snapshot" ||
+      code === "printscreen" ||
+      event.nativeEvent.keyCode === 44;
     const macShot = event.metaKey && event.shiftKey && ["3", "4", "5"].includes(key);
-    const windowsSnip = event.shiftKey && key === "s" && (event.metaKey || event.ctrlKey);
+    const windowsSnip =
+      event.shiftKey &&
+      (key === "s" || code === "keys") &&
+      (event.metaKey || event.ctrlKey);
     const altPrint = event.altKey && printLikeKey;
     if (printLikeKey || macShot || windowsSnip || altPrint) {
       event.preventDefault();
       triggerCaptureBlock("screenshot_attempt", {
         key: event.key,
+        code: event.nativeEvent.code,
         altKey: event.altKey,
         ctrlKey: event.ctrlKey,
         metaKey: event.metaKey,
@@ -383,12 +455,14 @@ export default function VideoPlayer({
 
   return (
     <div
-      className="relative h-full w-full select-none"
+      ref={playerRootRef}
+      className="relative h-full w-full select-none outline-none"
       onContextMenu={blockEvent}
       onCopy={blockEvent}
       onCut={blockEvent}
       onDragStart={blockEvent}
       onKeyDownCapture={handleKeyDownCapture}
+      tabIndex={-1}
     >
       {secureUrl ? (
         <video
@@ -402,7 +476,10 @@ export default function VideoPlayer({
             setDuration(event.currentTarget.duration || 0);
           }}
           onPause={() => setIsPlaying(false)}
-          onPlay={() => setIsPlaying(true)}
+          onPlay={() => {
+            setIsPlaying(true);
+            playerRootRef.current?.focus({ preventScroll: true });
+          }}
           playsInline
           src={secureUrl}
         />

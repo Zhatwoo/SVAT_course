@@ -42,6 +42,14 @@ export function useDashboardCourses() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      setProgress([]);
+      return;
+    }
+
+    let active = true;
+
     async function load() {
       setLoading(true);
       setError(null);
@@ -50,16 +58,22 @@ export function useDashboardCourses() {
           getCourses(),
           getEpisodes(),
         ]);
+        if (!active) return;
         setCourses(courseData.filter((c) => c.isPublished));
         setEpisodes(episodeData);
       } catch {
+        if (!active) return;
         setError("Failed to load courses. Please try again.");
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
-    load();
-  }, []);
+
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!user) {
@@ -98,7 +112,7 @@ export function useDashboardCourses() {
         courseHref: `/user/course?courseId=${course.id}`,
         displayThumbnail:
           course.thumbnailUrl ??
-          (firstEpisode
+          (firstEpisode?.youtubeVideoId
             ? getYouTubeThumbnail(firstEpisode.youtubeVideoId)
             : undefined),
       };

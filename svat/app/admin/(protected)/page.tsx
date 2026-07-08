@@ -1,15 +1,17 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { AdminGuard } from "@/components/auth/AdminGuard";
+import Link from "next/link";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TopNav from "@/components/layout/TopNav";
 import Footer from "@/components/layout/Footer";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import {
   createChapter,
   createCourse,
+  deleteChapter,
   getAllChapters,
   getCourses,
+  updateChapter,
   updateCourse,
 } from "@/lib/firestore/courses";
 import {
@@ -64,6 +66,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [formStatus, setFormStatus] = useState<FormStatus>("idle");
+  const [formError, setFormError] = useState("");
   const [filterChapter, setFilterChapter] = useState("all");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedRow, setSelectedRow] = useState<string | null>(null);
@@ -73,7 +76,6 @@ export default function AdminPage() {
   const [episodeNumber, setEpisodeNumber] = useState("");
   const [episodeTitle, setEpisodeTitle] = useState("");
   const [duration, setDuration] = useState("");
-  const [secureVideoPath, setSecureVideoPath] = useState("");
 
   const [newCourseTitle, setNewCourseTitle] = useState("");
   const [newChapterTitle, setNewChapterTitle] = useState("");
@@ -81,6 +83,13 @@ export default function AdminPage() {
   const [communityDiscordUrl, setCommunityDiscordUrl] = useState("");
   const [communityInput, setCommunityInput] = useState("");
   const [savingCommunity, setSavingCommunity] = useState(false);
+
+  const [editingChapterId, setEditingChapterId] = useState<string | null>(null);
+  const [chapterEditTitle, setChapterEditTitle] = useState("");
+  const [chapterEditOrder, setChapterEditOrder] = useState("");
+  const [chapterActionError, setChapterActionError] = useState("");
+
+  const episodeFormRef = useRef<HTMLElement>(null);
 
   const firebaseReady = isFirebaseConfigured();
 
@@ -109,12 +118,6 @@ export default function AdminPage() {
       const discord = settings.communityDiscordUrl ?? "";
       setCommunityDiscordUrl(discord);
       setCommunityInput(discord);
-      if (chapterData.length > 0 && !chapterId) {
-        setChapterId(chapterData[0].id);
-      }
-      if (courseData.length > 0 && !selectedCourseId) {
-        setSelectedCourseId(courseData[0].id);
-      }
     } catch (err) {
       setLoadError(
         getFirebaseErrorMessage(
@@ -125,17 +128,42 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
     }
-  }, [chapterId, selectedCourseId, firebaseReady]);
+  }, [firebaseReady]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
   useEffect(() => {
-    if (!selectedCourseId) return;
-    const firstChapter = chapters.find((c) => c.courseId === selectedCourseId);
-    if (firstChapter) setChapterId(firstChapter.id);
-  }, [selectedCourseId, chapters]);
+    if (courses.length > 0 && !selectedCourseId) {
+      setSelectedCourseId(courses[0].id);
+    }
+  }, [courses, selectedCourseId]);
+
+  useEffect(() => {
+    if (editingId) return;
+
+    if (!selectedCourseId) {
+      setChapterId("");
+      return;
+    }
+
+    const chaptersForCourse = chapters.filter(
+      (chapter) => chapter.courseId === selectedCourseId,
+    );
+
+    if (chaptersForCourse.length === 0) {
+      setChapterId("");
+      return;
+    }
+
+    setChapterId((current) => {
+      if (current && chaptersForCourse.some((chapter) => chapter.id === current)) {
+        return current;
+      }
+      return chaptersForCourse[0].id;
+    });
+  }, [selectedCourseId, chapters, editingId]);
 
   const chapterMap = useMemo(
     () => new Map(chapters.map((c) => [c.id, c])),
@@ -154,6 +182,15 @@ export default function AdminPage() {
         : chapters,
     [chapters, selectedCourseId],
   );
+
+  const episodeCountByChapter = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const episode of episodes) {
+      if (selectedCourseId && episode.courseId !== selectedCourseId) continue;
+      counts.set(episode.chapterId, (counts.get(episode.chapterId) ?? 0) + 1);
+    }
+    return counts;
+  }, [episodes, selectedCourseId]);
 
   const filteredEpisodes = useMemo(() => {
     let list = episodes;
@@ -189,21 +226,41 @@ export default function AdminPage() {
     setEpisodeNumber("");
     setEpisodeTitle("");
     setDuration("");
-    setSecureVideoPath("");
     setEditingId(null);
+    setFormError("");
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    setFormError("");
     if (!firebaseReady) {
       alert(FIREBASE_SETUP_MESSAGE);
       return;
     }
-    const videoId = extractYouTubeVideoId(youtubeUrl);
-    if (!videoId || !chapterId || !episodeTitle) return;
+    const trimmedYoutube = youtubeUrl.trim();
+    const videoId = extractYouTubeVideoId(trimmedYoutube);
+    if (!videoId) {
+      setFormError("Enter a valid YouTube URL (watch, youtu.be, or shorts link).");
+      return;
+    }
+    if (!chapterId) {
+      setFormError("Select a chapter for this episode.");
+      return;
+    }
+    if (!episodeTitle.trim()) {
+      setFormError("Episode title is required.");
+      return;
+    }
 
     const chapter = chapterMap.get(chapterId);
-    if (!chapter) return;
+    if (!chapter) {
+      setFormError("Selected chapter is unavailable. Refresh the page and try again.");
+      return;
+    }
+    if (chapter.courseId !== selectedCourseId) {
+      setFormError("Selected chapter does not belong to the active course.");
+      return;
+    }
 
     setFormStatus("publishing");
     try {
@@ -215,12 +272,11 @@ export default function AdminPage() {
         courseId: chapter.courseId,
         chapterId,
         title: episodeTitle,
-        youtubeUrl,
+        youtubeUrl: trimmedYoutube,
         youtubeVideoId: videoId,
         episodeNumber: Number(episodeNumber) || courseEpisodeCount + 1,
         order: Number(episodeNumber) || courseEpisodeCount + 1,
         ...(duration.trim() ? { duration: duration.trim() } : {}),
-        ...(secureVideoPath.trim() ? { secureVideoPath: secureVideoPath.trim() } : {}),
       };
 
       if (editingId) {
@@ -260,7 +316,7 @@ export default function AdminPage() {
       }
 
       const course = courses.find((c) => c.id === chapter.courseId);
-      if (course && !course.thumbnailUrl) {
+      if (course && !course.thumbnailUrl && videoId) {
         await updateCourse(chapter.courseId, {
           thumbnailUrl: getYouTubeThumbnail(videoId),
         });
@@ -283,13 +339,17 @@ export default function AdminPage() {
 
   const handleEdit = (episode: Episode) => {
     setEditingId(episode.id);
-    setYoutubeUrl(episode.youtubeUrl);
+    setSelectedCourseId(episode.courseId);
     setChapterId(episode.chapterId);
+    setFilterChapter(episode.chapterId);
+    setYoutubeUrl(episode.youtubeUrl ?? "");
     setEpisodeNumber(String(episode.episodeNumber));
     setEpisodeTitle(episode.title);
     setDuration(episode.duration ?? "");
-    setSecureVideoPath(episode.secureVideoPath ?? "");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setFormError("");
+    requestAnimationFrame(() => {
+      episodeFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
 
   const handleDelete = async (episodeId: string) => {
@@ -384,9 +444,101 @@ export default function AdminPage() {
         console.warn("Failed to write admin activity log (chapter create)", logError);
       }
       setNewChapterTitle("");
+      setChapterId(newChapterId);
+      setFilterChapter(newChapterId);
       await loadData();
     } catch (err) {
       alert(getFirebaseErrorMessage(err, "Failed to add chapter."));
+    }
+  };
+
+  const startChapterEdit = (chapter: Chapter) => {
+    setEditingChapterId(chapter.id);
+    setChapterEditTitle(chapter.title);
+    setChapterEditOrder(String(chapter.order));
+    setChapterActionError("");
+  };
+
+  const cancelChapterEdit = () => {
+    setEditingChapterId(null);
+    setChapterEditTitle("");
+    setChapterEditOrder("");
+    setChapterActionError("");
+  };
+
+  const handleSaveChapter = async () => {
+    if (!firebaseReady || !editingChapterId) return;
+    if (!chapterEditTitle.trim()) {
+      setChapterActionError("Chapter title is required.");
+      return;
+    }
+
+    const order = Number(chapterEditOrder);
+    if (!Number.isFinite(order) || order < 1) {
+      setChapterActionError("Order must be a positive number.");
+      return;
+    }
+
+    try {
+      await updateChapter(editingChapterId, {
+        title: chapterEditTitle.trim(),
+        order,
+      });
+      try {
+        await logAdminActivity({
+          action: "update",
+          entity: "chapter",
+          entityId: editingChapterId,
+          details: { title: chapterEditTitle.trim(), order },
+        });
+      } catch (logError) {
+        console.warn("Failed to write admin activity log (chapter update)", logError);
+      }
+      cancelChapterEdit();
+      await loadData();
+    } catch (err) {
+      setChapterActionError(getFirebaseErrorMessage(err, "Failed to update chapter."));
+    }
+  };
+
+  const handleDeleteChapter = async (chapter: Chapter) => {
+    if (!firebaseReady) {
+      alert(FIREBASE_SETUP_MESSAGE);
+      return;
+    }
+
+    const episodeCount = episodeCountByChapter.get(chapter.id) ?? 0;
+    if (episodeCount > 0) {
+      setChapterActionError(
+        `Cannot delete "${chapter.title}": move or delete ${episodeCount} episode(s) first.`,
+      );
+      return;
+    }
+
+    if (!confirm(`Delete chapter "${chapter.title}"?`)) return;
+
+    try {
+      await deleteChapter(chapter.id);
+      try {
+        await logAdminActivity({
+          action: "delete",
+          entity: "chapter",
+          entityId: chapter.id,
+          details: { title: chapter.title, courseId: chapter.courseId },
+        });
+      } catch (logError) {
+        console.warn("Failed to write admin activity log (chapter delete)", logError);
+      }
+      if (chapterId === chapter.id) {
+        setChapterId("");
+      }
+      if (filterChapter === chapter.id) {
+        setFilterChapter("all");
+      }
+      cancelChapterEdit();
+      await loadData();
+    } catch (err) {
+      alert(getFirebaseErrorMessage(err, "Failed to delete chapter."));
     }
   };
 
@@ -433,20 +585,13 @@ export default function AdminPage() {
   }
 
   return (
-    <AdminGuard>
     <div className="min-h-screen bg-background text-foreground">
-      <TopNav
-        links={[
-          { label: "Dashboard", href: "/admin" },
-          { label: "Courses", href: "/admin", active: true },
-          { label: "Community", href: communityDiscordUrl || "#" },
-        ]}
-      />
+      <TopNav showNavLinks={false} />
 
-      <div className="flex min-h-screen">
+      <div className="flex min-h-[calc(100vh-64px)]">
         <AdminSidebar />
 
-        <main className="mx-auto max-w-6xl flex-1 px-lg py-xl">
+        <main className="dashboard-main dashboard-main--admin mx-auto max-w-6xl flex-1 px-lg py-xl">
           {!firebaseReady && (
             <div className="mb-lg rounded-xl border border-error-container bg-error-container px-lg py-md text-on-error-container">
               <div className="flex items-start gap-md">
@@ -482,6 +627,26 @@ export default function AdminPage() {
                 Upload and organize instructional trading content. Paste YouTube
                 links from your channel.
               </p>
+            </div>
+          </div>
+
+          <div className="mb-lg rounded-xl border border-secondary/30 bg-secondary-container/15 p-md">
+            <div className="flex flex-wrap items-center justify-between gap-md">
+              <div>
+                <h3 className="font-label-md text-label-md text-on-surface">
+                  Student Access Codes
+                </h3>
+                <p className="font-body-sm text-body-sm text-on-surface-variant">
+                  Generate unique codes for paid users. One code = one account only.
+                </p>
+              </div>
+              <Link
+                className="inline-flex items-center gap-sm rounded-lg bg-secondary px-lg py-sm font-label-md text-label-md text-white transition hover:opacity-90"
+                href="/admin/codes"
+              >
+                <span className="material-symbols-outlined text-[18px]">vpn_key</span>
+                Generate Codes
+              </Link>
             </div>
           </div>
 
@@ -584,9 +749,126 @@ export default function AdminPage() {
             </section>
           )}
 
+          {selectedCourseId && courseChapters.length > 0 && (
+            <section className="mb-lg rounded-xl border border-outline-variant bg-surface-container-lowest p-md dark:border-outline dark:bg-surface-container-low">
+              <h3 className="font-label-md text-label-md mb-sm">Manage Chapters</h3>
+              <p className="mb-md font-body-sm text-body-sm text-on-surface-variant">
+                Edit titles, reorder, or remove empty chapters for{" "}
+                {selectedCourse?.title ?? "this course"}.
+              </p>
+              {chapterActionError && (
+                <p
+                  className="mb-md rounded-lg border border-error/30 bg-error-container/20 px-md py-sm font-body-sm text-body-sm text-error"
+                  role="alert"
+                >
+                  {chapterActionError}
+                </p>
+              )}
+              <div className="space-y-sm">
+                {courseChapters.map((chapter) => {
+                  const episodeCount = episodeCountByChapter.get(chapter.id) ?? 0;
+                  const isEditing = editingChapterId === chapter.id;
+
+                  return (
+                    <div
+                      key={chapter.id}
+                      className="flex flex-wrap items-center gap-sm rounded-lg border border-outline-variant bg-surface-container-low p-sm dark:border-outline dark:bg-surface-container"
+                    >
+                      {isEditing ? (
+                        <>
+                          <input
+                            className="min-w-[12rem] flex-1 rounded border border-outline-variant bg-surface-container-lowest p-sm text-body-sm dark:border-outline dark:bg-surface-container"
+                            onChange={(e) => setChapterEditTitle(e.target.value)}
+                            placeholder="Chapter title"
+                            value={chapterEditTitle}
+                          />
+                          <input
+                            className="w-20 rounded border border-outline-variant bg-surface-container-lowest p-sm text-body-sm dark:border-outline dark:bg-surface-container"
+                            min={1}
+                            onChange={(e) => setChapterEditOrder(e.target.value)}
+                            placeholder="Order"
+                            type="number"
+                            value={chapterEditOrder}
+                          />
+                          <button
+                            className="rounded bg-secondary px-md py-sm text-on-secondary"
+                            onClick={handleSaveChapter}
+                            type="button"
+                          >
+                            Save
+                          </button>
+                          <button
+                            className="rounded border border-outline-variant px-md py-sm"
+                            onClick={cancelChapterEdit}
+                            type="button"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="min-w-[12rem] flex-1">
+                            <p className="font-label-md text-label-md text-on-surface">
+                              {chapter.title}
+                            </p>
+                            <p className="font-body-sm text-body-sm text-on-surface-variant">
+                              Order {chapter.order} · {episodeCount} episode
+                              {episodeCount === 1 ? "" : "s"}
+                            </p>
+                          </div>
+                          <button
+                            className="font-label-sm text-label-sm text-secondary hover:underline"
+                            onClick={() => startChapterEdit(chapter)}
+                            type="button"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="font-label-sm text-label-sm text-error hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+                            disabled={episodeCount > 0}
+                            onClick={() => handleDeleteChapter(chapter)}
+                            title={
+                              episodeCount > 0
+                                ? "Move or delete episodes first"
+                                : "Delete chapter"
+                            }
+                            type="button"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
           <div className="grid grid-cols-12 gap-lg">
             <div className="col-span-12 space-y-lg lg:col-span-4">
-              <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-lg dark:border-outline dark:bg-surface-container-low">
+              <section
+                ref={episodeFormRef}
+                className={`rounded-xl border bg-surface-container-lowest p-lg dark:bg-surface-container-low ${
+                  editingId
+                    ? "border-secondary ring-2 ring-secondary/30"
+                    : "border-outline-variant dark:border-outline"
+                }`}
+              >
+                {editingId && (
+                  <div className="mb-md flex flex-wrap items-center justify-between gap-sm rounded-lg border border-secondary/40 bg-secondary-container/20 px-md py-sm">
+                    <p className="font-label-md text-label-md text-on-surface">
+                      Editing: <span className="font-semibold">{episodeTitle}</span>
+                    </p>
+                    <button
+                      className="font-label-sm text-label-sm text-secondary hover:underline"
+                      onClick={resetForm}
+                      type="button"
+                    >
+                      Cancel edit
+                    </button>
+                  </div>
+                )}
                 <h2 className="font-headline-sm text-headline-sm mb-md text-primary">
                   {editingId ? "Edit Lesson" : "Add New Lesson"}
                 </h2>
@@ -612,8 +894,14 @@ export default function AdminPage() {
                       </label>
                       <select
                         className="w-full rounded-lg border border-outline-variant bg-surface-container-low p-md text-body-sm text-on-surface dark:border-outline dark:bg-surface-container"
-                        onChange={(e) => setChapterId(e.target.value)}
+                        onChange={(e) => {
+                          setChapterId(e.target.value);
+                          setFormError("");
+                        }}
                         required
+                        title={
+                          courseChapters.find((chapter) => chapter.id === chapterId)?.title
+                        }
                         value={chapterId}
                         disabled={courseChapters.length === 0}
                       >
@@ -621,7 +909,7 @@ export default function AdminPage() {
                           <option value="">Add a chapter first</option>
                         ) : (
                           courseChapters.map((ch) => (
-                            <option key={ch.id} value={ch.id}>
+                            <option key={ch.id} title={ch.title} value={ch.id}>
                               {ch.title}
                             </option>
                           ))
@@ -671,22 +959,6 @@ export default function AdminPage() {
 
                   <div className="space-y-xs">
                     <label className="font-label-md text-label-md text-on-surface-variant">
-                      Secure Video Path (optional)
-                    </label>
-                    <input
-                      className="w-full rounded-lg border border-outline-variant bg-surface-container-low p-md text-body-sm"
-                      onChange={(e) => setSecureVideoPath(e.target.value)}
-                      placeholder="protected-videos/course-1/episode-3.mp4"
-                      type="text"
-                      value={secureVideoPath}
-                    />
-                    <p className="font-body-sm text-body-sm text-on-surface-variant">
-                      If set, users will stream via short-lived signed URL instead of direct YouTube.
-                    </p>
-                  </div>
-
-                  <div className="space-y-xs">
-                    <label className="font-label-md text-label-md text-on-surface-variant">
                       Preview
                     </label>
                     <div className="flex aspect-video items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-outline bg-primary-container">
@@ -703,6 +975,12 @@ export default function AdminPage() {
                       )}
                     </div>
                   </div>
+
+                  {formError && (
+                    <p className="rounded-lg border border-error/30 bg-error-container/20 px-md py-sm font-body-sm text-body-sm text-error" role="alert">
+                      {formError}
+                    </p>
+                  )}
 
                   <div className="flex gap-sm">
                     <button
@@ -752,27 +1030,27 @@ export default function AdminPage() {
                 </form>
               </section>
 
-              <section className="rounded-xl border border-outline-variant bg-surface-container-high p-lg text-on-surface dark:border-primary dark:bg-primary-container dark:text-on-primary-container">
-                <h3 className="font-label-md text-label-md mb-md uppercase tracking-widest text-on-surface-variant dark:text-on-primary-container/80">
+              <section className="rounded-xl border border-outline-variant bg-surface-container-high p-lg dark:border-outline dark:bg-surface-container-low">
+                <h3 className="font-label-md text-label-md mb-md uppercase tracking-widest text-on-surface-variant">
                   Quick Summary
                 </h3>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-display-lg text-display-lg leading-none text-primary dark:text-on-primary">
+                    <p className="font-display-lg text-display-lg leading-none text-primary dark:text-on-surface">
                       {summaryStats.totalVideos}
                     </p>
-                    <p className="font-body-sm text-body-sm text-on-surface-variant dark:text-on-primary-container/85">
+                    <p className="font-body-sm text-body-sm text-on-surface-variant">
                       Total Videos
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="font-headline-sm text-headline-sm text-primary dark:text-on-primary">
+                    <p className="font-headline-sm text-headline-sm text-primary dark:text-on-surface">
                       {Math.round(summaryStats.knownDurationMinutes)}m
                       {summaryStats.unknownDurationCount > 0
                         ? ` +${summaryStats.unknownDurationCount}`
                         : ""}
                     </p>
-                    <p className="font-body-sm text-body-sm text-on-surface-variant dark:text-on-primary-container/85">
+                    <p className="font-body-sm text-body-sm text-on-surface-variant">
                       Duration{" "}
                       {summaryStats.unknownDurationCount > 0
                         ? "(+ videos w/o time)"
@@ -838,11 +1116,19 @@ export default function AdminPage() {
                           <td className="px-lg py-md">
                             <div className="flex items-center gap-md">
                               <div className="relative h-12 w-20 flex-shrink-0 overflow-hidden rounded bg-primary">
-                                <img
-                                  alt={video.title}
-                                  className="h-full w-full object-cover opacity-70"
-                                  src={getYouTubeThumbnail(video.youtubeVideoId)}
-                                />
+                                {video.youtubeVideoId ? (
+                                  <img
+                                    alt={video.title}
+                                    className="h-full w-full object-cover opacity-70"
+                                    src={getYouTubeThumbnail(video.youtubeVideoId)}
+                                  />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center bg-surface-container-high">
+                                    <span className="material-symbols-outlined text-secondary">
+                                      lock
+                                    </span>
+                                  </div>
+                                )}
                                 <span className="material-symbols-outlined absolute inset-0 flex items-center justify-center text-sm text-on-primary">
                                   play_arrow
                                 </span>
@@ -852,7 +1138,7 @@ export default function AdminPage() {
                                   {video.title}
                                 </p>
                                 <p className="font-body-sm text-body-sm text-on-surface-variant">
-                                  {video.youtubeVideoId}
+                                  {video.youtubeVideoId ?? "Private video"}
                                   {video.duration ? ` · ${video.duration}` : ""}
                                 </p>
                               </div>
@@ -911,8 +1197,7 @@ export default function AdminPage() {
         </main>
       </div>
 
-      <Footer />
+      <Footer dashboardLayout="admin" />
     </div>
-    </AdminGuard>
   );
 }

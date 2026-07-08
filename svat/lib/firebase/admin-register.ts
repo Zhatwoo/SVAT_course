@@ -27,12 +27,16 @@ export async function registerNewAdmin(
   const normalizedEmail = email.trim().toLowerCase();
   const normalizedName = name.trim();
 
-  const validationError = validateSignupForm({
-    name: normalizedName,
-    email: normalizedEmail,
-    password,
-    confirmPassword,
-  });
+  const validationError = validateSignupForm(
+    {
+      name: normalizedName,
+      email: normalizedEmail,
+      password,
+      confirmPassword,
+      accessCode: "",
+    },
+    { requireAccessCode: false },
+  );
   if (validationError) {
     throw new Error(validationError);
   }

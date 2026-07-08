@@ -26,7 +26,9 @@ export default function AdminLoginPage() {
     const password = form.get("password") as string;
 
     try {
-      const user = await signIn(email, password);
+      const user = await signIn(email, password, undefined, {
+        requireAccessCode: false,
+      });
       let role: "admin" | "student" = "student";
       try {
         role = await resolveUserRole(user.uid, user.email);

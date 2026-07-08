@@ -9,6 +9,8 @@ import { getPlatformSettings } from "@/lib/firestore/platform";
 import UserDashboardFooter from "@/app/components/UserDashboardFooter";
 import UserDashboardHeader from "@/app/components/UserDashboardHeader";
 import UserDashboardSidebar from "@/app/components/UserDashboardSidebar";
+import MarketNewsBanner from "@/components/market-news/MarketNewsBanner";
+import { useMarketNews } from "@/hooks/useMarketNews";
 import {
   getCategoryIcon,
   useDashboardCourses,
@@ -60,7 +62,7 @@ function TradingViewWidget({
 }
 
 export default function UserDashboardPage() {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const { isDark } = useTheme();
   const [communityDiscordUrl, setCommunityDiscordUrl] = useState("");
   const [tvTheme, setTvTheme] = useState<"light" | "dark">("dark");
@@ -74,6 +76,7 @@ export default function UserDashboardPage() {
     loading,
     error,
   } = useDashboardCourses();
+  const { events: marketNewsEvents, loading: marketNewsLoading } = useMarketNews();
 
   const firstName = profile?.displayName?.split(" ")[0] ?? "Student";
   const curriculumHref = continueCourse?.courseHref ?? "/user/course";
@@ -109,7 +112,7 @@ export default function UserDashboardPage() {
     .filter(Boolean)
     .slice(0, 5);
 
-  if (loading) {
+  if (loading || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <span className="material-symbols-outlined animate-spin text-secondary">
@@ -125,20 +128,26 @@ export default function UserDashboardPage() {
         links={[
           { label: "Dashboard", href: "/user", active: true },
           { label: "Courses", href: "/user/course" },
+          { label: "Market News", href: "/user/market-news" },
           { label: "Community", href: communityDiscordUrl || "#" },
         ]}
         progressPercent={overallProgress}
         showProgress
       />
 
-      <div className="flex min-h-[calc(100vh-64px)]">
+      <div className="flex min-h-[calc(100vh-64px)] w-full min-w-0">
         <UserDashboardSidebar
+          activeHref="/user"
           curriculumHref={curriculumHref}
           onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
           sidebarCollapsed={sidebarCollapsed}
         />
 
-        <main className="flex-grow p-md md:p-lg">
+        <main
+          className={`dashboard-main w-full overflow-x-hidden p-md md:p-lg ${
+            sidebarCollapsed ? "dashboard-main--collapsed" : "dashboard-main--expanded"
+          }`}
+        >
           {error && (
             <div className="mb-lg rounded-lg border border-error-container bg-error-container px-lg py-md text-on-error-container">
               <p className="font-body-sm text-body-sm">{error}</p>
@@ -151,9 +160,9 @@ export default function UserDashboardPage() {
             overallProgress={overallProgress}
           />
 
-          <section className="mb-xl overflow-hidden rounded-lg border border-outline-variant bg-surface-container-lowest">
+          <section className="mb-lg overflow-hidden rounded-lg border border-outline-variant bg-surface-container-lowest">
             <TradingViewWidget
-              className="h-[48px] w-full"
+              className="h-[46px] w-full overflow-hidden"
               config={{
                 symbols: [
                   { proName: "FOREXCOM:SPXUSD", title: "S&P 500" },
@@ -174,6 +183,8 @@ export default function UserDashboardPage() {
               scriptSrc="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js"
             />
           </section>
+
+          <MarketNewsBanner events={marketNewsEvents} loading={marketNewsLoading} />
 
           <section className="mb-xl grid grid-cols-1 gap-md sm:grid-cols-2 xl:grid-cols-4">
             <div className="tv-panel p-lg">
@@ -212,7 +223,7 @@ export default function UserDashboardPage() {
 
           {continueCourse && (
             <div className="card-flat mb-xl flex flex-col overflow-hidden md:flex-row md:h-[280px]">
-              <div className="relative h-48 w-full overflow-hidden md:h-full md:w-2/5">
+              <div className="relative h-48 w-full shrink-0 overflow-hidden bg-surface-container-high md:h-full md:w-2/5">
                 {continueCourse.displayThumbnail ? (
                   <img
                     alt={continueCourse.title}
@@ -456,7 +467,7 @@ export default function UserDashboardPage() {
         </main>
       </div>
 
-      <UserDashboardFooter />
+      <UserDashboardFooter sidebarCollapsed={sidebarCollapsed} />
     </div>
   );
 }

@@ -84,6 +84,7 @@ export async function registerUserRole(
   uid: string,
   email: string,
   displayName?: string,
+  accessCodeUsed?: string,
 ) {
   const normalizedEmail = email.trim().toLowerCase();
   const name = displayName?.trim() || "Student";
@@ -95,6 +96,7 @@ export async function registerUserRole(
       email: normalizedEmail,
       displayName: name,
       role: "student" as const,
+      ...(accessCodeUsed ? { accessCodeUsed } : {}),
       createdAt: serverTimestamp(),
     },
     { merge: true },

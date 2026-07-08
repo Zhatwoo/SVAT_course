@@ -1,0 +1,48 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userProfileData() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function profileSaysAdmin() {
+      return isSignedIn()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && userProfileData().role == "admin";
+    }
+
+    function adminRoleData() {
+      return firestore.get(/databases/(default)/documents/role/admin).data;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && firestore.exists(/databases/(default)/documents/role/admin)
+        && (
+          adminRoleData().members[request.auth.uid] == true
+          || (
+            request.auth.token.email != null
+            && (
+              adminRoleData().members[request.auth.token.email] == true
+              || adminRoleData().members[request.auth.token.email.lower()] == true
+            )
+          )
+        );
+    }
+
+    function canManageAdminContent() {
+      return isAdmin() || profileSaysAdmin();
+    }
+
+    match /protected-videos/{courseId}/{fileName} {
+      allow read: if false;
+      allow write: if canManageAdminContent()
+        && request.resource.size < 500 * 1024 * 1024
+        && request.resource.contentType.matches('video/.*');
+    }
+  }
+}

@@ -3,24 +3,31 @@
 import Link from "next/link";
 
 const SIDEBAR_LINKS = [
-  { icon: "dashboard", label: "Dashboard", active: true, href: "/user" },
-  { icon: "menu_book", label: "Curriculum", active: false, hrefKey: "curriculum" as const },
+  { icon: "dashboard", label: "Dashboard", href: "/user" },
+  { icon: "newspaper", label: "Market News", href: "/user/market-news" },
+  {
+    icon: "menu_book",
+    label: "Curriculum",
+    hrefKey: "curriculum" as const,
+  },
 ] as const;
 
 interface UserDashboardSidebarProps {
   sidebarCollapsed: boolean;
   curriculumHref: string;
+  activeHref: string;
   onToggleCollapse: () => void;
 }
 
 export default function UserDashboardSidebar({
   sidebarCollapsed,
   curriculumHref,
+  activeHref,
   onToggleCollapse,
 }: UserDashboardSidebarProps) {
   return (
     <aside
-      className={`tm-sidebar hidden min-h-[calc(100vh-64px)] flex-col border-r border-outline-variant bg-surface-container-low py-md transition-all duration-300 md:flex ${
+      className={`tm-sidebar dashboard-sidebar hidden flex-col border-r border-outline-variant bg-surface-container-low py-md transition-all duration-300 md:flex ${
         sidebarCollapsed ? "w-[88px]" : "w-[280px]"
       }`}
     >
@@ -55,24 +62,28 @@ export default function UserDashboardSidebar({
       </div>
 
       <nav className="flex-grow space-y-1">
-        {SIDEBAR_LINKS.map((link) => (
-          <Link
-            key={link.label}
-            className={`tm-sidebar-link flex items-center px-md py-md transition-colors ${
-              link.active
-                ? "border-l-4 border-secondary bg-surface-container-high font-bold text-secondary opacity-95 shadow-sm"
-                : "text-on-surface-variant hover:bg-surface-container"
-            }`}
-            href={"hrefKey" in link ? curriculumHref : link.href}
-          >
-            <span className="material-symbols-outlined">{link.icon}</span>
-            {!sidebarCollapsed && (
-              <span className="ml-md font-label-md text-label-md">{link.label}</span>
-            )}
-          </Link>
-        ))}
-      </nav>
+        {SIDEBAR_LINKS.map((link) => {
+          const href = "hrefKey" in link ? curriculumHref : link.href;
+          const isActive = activeHref === href;
 
+          return (
+            <Link
+              key={link.label}
+              className={`tm-sidebar-link flex items-center px-md py-md transition-colors ${
+                isActive
+                  ? "border-l-4 border-secondary bg-surface-container-high font-bold text-secondary opacity-95 shadow-sm"
+                  : "text-on-surface-variant hover:bg-surface-container"
+              }`}
+              href={href}
+            >
+              <span className="material-symbols-outlined">{link.icon}</span>
+              {!sidebarCollapsed && (
+                <span className="ml-md font-label-md text-label-md">{link.label}</span>
+              )}
+            </Link>
+          );
+        })}
+      </nav>
     </aside>
   );
 }

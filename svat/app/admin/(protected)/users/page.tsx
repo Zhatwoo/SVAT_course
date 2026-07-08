@@ -1,13 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AdminGuard } from "@/components/auth/AdminGuard";
 import TopNav from "@/components/layout/TopNav";
 import Footer from "@/components/layout/Footer";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import { isFirebaseConfigured } from "@/lib/firebase/client";
 import { getFirebaseErrorMessage } from "@/lib/firebase/errors";
-import { getPlatformSettings } from "@/lib/firestore/platform";
 import { logAdminActivity } from "@/lib/firestore/activityLogs";
 import {
   getAllUsers,
@@ -20,7 +18,6 @@ import type { UserProfile, UserRole, UserSecurityEvent } from "@/lib/types";
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [securityEvents, setSecurityEvents] = useState<UserSecurityEvent[]>([]);
-  const [communityDiscordUrl, setCommunityDiscordUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -40,14 +37,12 @@ export default function AdminUsersPage() {
 
     setLoadError(null);
     try {
-      const [userData, eventData, settings] = await Promise.all([
+      const [userData, eventData] = await Promise.all([
         getAllUsers(),
         getRecentSecurityEvents(200),
-        getPlatformSettings(),
       ]);
       setUsers(userData);
       setSecurityEvents(eventData);
-      setCommunityDiscordUrl(settings.communityDiscordUrl ?? "");
     } catch (err) {
       setLoadError(
         getFirebaseErrorMessage(err, "Failed to load users/security records."),
@@ -131,20 +126,13 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <AdminGuard>
-      <div className="min-h-screen bg-background text-foreground">
-        <TopNav
-          links={[
-            { label: "Dashboard", href: "/admin" },
-            { label: "Users", href: "/admin/users", active: true },
-            { label: "Community", href: communityDiscordUrl || "#" },
-          ]}
-        />
+    <div className="min-h-screen bg-background text-foreground">
+        <TopNav showNavLinks={false} />
 
-        <div className="flex min-h-screen">
+        <div className="flex min-h-[calc(100vh-64px)]">
           <AdminSidebar />
 
-          <main className="mx-auto max-w-6xl flex-1 px-lg py-xl">
+          <main className="dashboard-main dashboard-main--admin mx-auto max-w-6xl flex-1 px-lg py-xl">
             {loadError && (
               <div className="mb-lg rounded-xl border border-error-container bg-error-container px-lg py-md text-on-error-container">
                 <p className="font-body-sm text-body-sm">{loadError}</p>
@@ -168,6 +156,7 @@ export default function AdminUsersPage() {
                     <tr className="border-b border-outline-variant bg-surface-container-low">
                       <th className="px-md py-sm font-label-md text-label-md text-on-surface-variant">User</th>
                       <th className="px-md py-sm font-label-md text-label-md text-on-surface-variant">Role</th>
+                      <th className="px-md py-sm font-label-md text-label-md text-on-surface-variant">Access Code</th>
                       <th className="px-md py-sm font-label-md text-label-md text-on-surface-variant">Status</th>
                       <th className="px-md py-sm font-label-md text-label-md text-on-surface-variant">Actions</th>
                     </tr>
@@ -207,6 +196,9 @@ export default function AdminUsersPage() {
                             ) : (
                               <span className="capitalize">{userRecord.role}</span>
                             )}
+                          </td>
+                          <td className="px-md py-sm font-body-sm text-body-sm text-on-surface-variant">
+                            {userRecord.accessCodeUsed || "—"}
                           </td>
                           <td className="px-md py-sm">
                             <span
@@ -318,8 +310,7 @@ export default function AdminUsersPage() {
           </main>
         </div>
 
-        <Footer />
+        <Footer dashboardLayout="admin" />
       </div>
-    </AdminGuard>
   );
 }

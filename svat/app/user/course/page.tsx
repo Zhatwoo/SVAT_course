@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import VideoPlayer from "@/components/VideoPlayer";
+import CourseChapterList from "@/components/course/CourseChapterList";
 import TopNav from "@/components/layout/TopNav";
 import Footer from "@/components/layout/Footer";
 import { useAuth } from "@/contexts/AuthContext";
@@ -16,90 +17,7 @@ import {
   updateWatchProgress,
 } from "@/lib/firestore/progress";
 import { logUserSecurityEvent } from "@/lib/firestore/userSecurityEvents";
-import type { Chapter, EpisodeWithStatus } from "@/lib/types";
-
-function EpisodeButton({
-  episode,
-  isSelected,
-  onSelect,
-}: {
-  episode: EpisodeWithStatus;
-  isSelected: boolean;
-  onSelect: (id: string) => void;
-}) {
-  if (episode.status === "locked") {
-    return (
-      <button
-        className="flex w-full cursor-not-allowed items-start gap-md p-md text-left opacity-60"
-        disabled
-        type="button"
-      >
-        <div className="mt-1 flex-shrink-0">
-          <span className="material-symbols-outlined text-outline">lock</span>
-        </div>
-        <div className="flex flex-col">
-          <span className="font-label-md text-label-md text-on-surface-variant dark:text-on-primary-container">
-            {episode.title}
-          </span>
-          <span className="font-body-sm text-body-sm text-outline">
-            Complete the previous episode to unlock this one
-          </span>
-        </div>
-      </button>
-    );
-  }
-
-  const completed = episode.status === "completed";
-
-  return (
-    <button
-      className={`flex w-full items-start gap-md p-md text-left transition-colors ${
-        isSelected
-          ? "border-l-4 border-secondary bg-surface-container-high dark:border-secondary-fixed dark:bg-surface-container-highest"
-          : "border-l-4 border-transparent hover:bg-surface-container dark:hover:bg-surface-container-high"
-      }`}
-      onClick={() => onSelect(episode.id)}
-      type="button"
-    >
-      <div className="mt-1 flex-shrink-0">
-        <span
-          className={`material-symbols-outlined ${
-            completed
-              ? "text-on-tertiary-container"
-              : "text-secondary dark:text-secondary-fixed"
-          }`}
-          style={{ fontVariationSettings: "'FILL' 1" }}
-        >
-          {completed ? "check_circle" : "play_circle"}
-        </span>
-      </div>
-      <div className="flex flex-col">
-        <span
-          className={`font-label-md text-label-md ${
-            isSelected
-              ? "font-bold text-secondary dark:text-secondary-fixed"
-              : completed
-                ? "text-on-tertiary-container"
-                : ""
-          }`}
-        >
-          {episode.title}
-        </span>
-        <span
-          className={`font-body-sm text-body-sm ${
-            isSelected
-              ? "text-secondary-container dark:text-secondary-fixed"
-              : "text-outline"
-          }`}
-        >
-          {completed
-            ? `Completed${episode.duration ? ` • ${episode.duration}` : ""}`
-            : `Now watching${episode.duration ? ` • ${episode.duration}` : ""}`}
-        </span>
-      </div>
-    </button>
-  );
-}
+import type { Chapter } from "@/lib/types";
 
 export default function CoursePage() {
   const searchParams = useSearchParams();
@@ -114,6 +32,9 @@ export default function CoursePage() {
     activeCourseId,
   } = useCourseData(courseId);
   const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [expandedChapterIds, setExpandedChapterIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [activeEpisodeId, setActiveEpisodeId] = useState<string | null>(null);
   const [communityDiscordUrl, setCommunityDiscordUrl] = useState("");
   const [secureVideoUrl, setSecureVideoUrl] = useState<string | null>(null);
@@ -194,6 +115,77 @@ export default function CoursePage() {
     }));
   }, [chapters, episodesWithStatus]);
 
+  const orphanEpisodes = useMemo(() => {
+    const chapterIds = new Set(chapters.map((chapter) => chapter.id));
+    return episodesWithStatus.filter(
+      (episode) => !chapterIds.has(episode.chapterId),
+    );
+  }, [chapters, episodesWithStatus]);
+
+  const chapterIdList = useMemo(
+    () => chapters.map((chapter) => chapter.id).join(","),
+    [chapters],
+  );
+
+  const activeEpisodeChapterKey = useMemo(() => {
+    if (!activeEpisodeId) return "";
+
+    const episode = episodesWithStatus.find(
+      (item) => item.id === activeEpisodeId,
+    );
+    if (!episode?.chapterId) return "";
+
+    const chapterIds = new Set(
+      chapterIdList.split(",").filter((id) => id.length > 0),
+    );
+
+    return chapterIds.has(episode.chapterId)
+      ? episode.chapterId
+      : "__uncategorized__";
+  }, [activeEpisodeId, episodesWithStatus, chapterIdList]);
+
+  const initializedChaptersKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!activeCourseId) {
+      initializedChaptersKeyRef.current = null;
+      setExpandedChapterIds(new Set());
+      return;
+    }
+
+    if (!chapterIdList) return;
+
+    const initKey = `${activeCourseId}:${chapterIdList}`;
+    if (initializedChaptersKeyRef.current === initKey) return;
+
+    initializedChaptersKeyRef.current = initKey;
+    const firstChapterId = chapterIdList.split(",")[0];
+    setExpandedChapterIds(firstChapterId ? new Set([firstChapterId]) : new Set());
+  }, [activeCourseId, chapterIdList]);
+
+  useEffect(() => {
+    if (!activeEpisodeChapterKey) return;
+
+    setExpandedChapterIds((current) => {
+      if (current.has(activeEpisodeChapterKey)) return current;
+      const next = new Set(current);
+      next.add(activeEpisodeChapterKey);
+      return next;
+    });
+  }, [activeEpisodeChapterKey]);
+
+  const handleToggleChapter = useCallback((chapterId: string) => {
+    setExpandedChapterIds((current) => {
+      const next = new Set(current);
+      if (next.has(chapterId)) {
+        next.delete(chapterId);
+      } else {
+        next.add(chapterId);
+      }
+      return next;
+    });
+  }, []);
+
   const handleComplete = useCallback(async () => {
     if (!user || !activeEpisode || activeEpisode.progress?.completed) return;
     await markEpisodeComplete(user.uid, activeEpisode);
@@ -229,8 +221,10 @@ export default function CoursePage() {
           courseId: activeEpisode.courseId,
           context,
         });
-      } catch {
-        // non-blocking
+      } catch (err) {
+        if (process.env.NODE_ENV !== "production") {
+          console.error("Failed to log security event:", err);
+        }
       }
     },
     [user, activeEpisode],
@@ -289,21 +283,15 @@ export default function CoursePage() {
                 No episodes yet. Check back once the admin publishes lessons.
               </p>
             ) : (
-              episodesByChapter.map(({ chapter, episodes }) => (
-                <div key={chapter.id}>
-                  <p className="px-md pt-md font-label-sm text-label-sm uppercase tracking-wider text-outline">
-                    {chapter.title}
-                  </p>
-                  {episodes.map((episode) => (
-                    <EpisodeButton
-                      key={episode.id}
-                      episode={episode}
-                      isSelected={activeEpisodeId === episode.id}
-                      onSelect={setActiveEpisodeId}
-                    />
-                  ))}
-                </div>
-              ))
+              <CourseChapterList
+                activeEpisodeId={activeEpisodeId}
+                chapters={chapters}
+                episodesByChapter={episodesByChapter}
+                expandedChapterIds={expandedChapterIds}
+                onSelectEpisode={setActiveEpisodeId}
+                onToggleChapter={handleToggleChapter}
+                orphanEpisodes={orphanEpisodes}
+              />
             )}
           </div>
         </aside>

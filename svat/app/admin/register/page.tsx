@@ -132,17 +132,12 @@ export default function AdminRegisterPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <TopNav
-        links={[
-          { label: "Dashboard", href: "/admin" },
-          { label: "Admin Register", href: "/admin/register", active: true },
-        ]}
-      />
+      <TopNav showNavLinks={false} />
 
-      <div className="flex min-h-screen">
+      <div className="flex min-h-[calc(100vh-64px)]">
         <AdminSidebar />
 
-        <main className="mx-auto max-w-4xl flex-1 px-lg py-xl">
+        <main className="dashboard-main dashboard-main--admin mx-auto max-w-4xl flex-1 px-lg py-xl">
           <div className="mb-xl">
             <h1 className="font-headline-lg text-headline-lg text-primary">
               Admin Registration
@@ -411,7 +406,7 @@ export default function AdminRegisterPage() {
         </main>
       </div>
 
-      <Footer />
+      <Footer dashboardLayout="admin" />
     </div>
   );
 }

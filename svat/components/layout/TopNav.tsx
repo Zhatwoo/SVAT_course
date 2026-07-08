@@ -13,6 +13,7 @@ interface NavLink {
 
 interface TopNavProps {
   links?: NavLink[];
+  showNavLinks?: boolean;
   showProgress?: boolean;
   progressPercent?: number;
   showThemeToggle?: boolean;
@@ -29,6 +30,7 @@ const DEFAULT_LINKS: NavLink[] = [
 
 export default function TopNav({
   links = DEFAULT_LINKS,
+  showNavLinks = true,
   showProgress = false,
   progressPercent = 0,
   showThemeToggle = true,
@@ -56,37 +58,39 @@ export default function TopNav({
         >
           One Traders
         </Link>
-        <nav className="hidden items-center gap-sm md:flex">
-          {links.map((link) =>
-            link.href === "#" || isExternalLink(link.href) ? (
-              <a
-                key={link.label}
-                className={`rounded-lg px-sm py-xs font-label-md text-label-md transition-colors duration-200 ${
-                  link.active
-                    ? "bg-surface-container-high text-secondary"
-                    : "text-on-surface-variant hover:bg-surface-container hover:text-secondary"
-                }`}
-                href={link.href}
-                rel={isExternalLink(link.href) ? "noreferrer noopener" : undefined}
-                target={isExternalLink(link.href) ? "_blank" : undefined}
-              >
-                {link.label}
-              </a>
-            ) : (
-              <Link
-                key={link.label}
-                className={`rounded-lg px-sm py-xs font-label-md text-label-md transition-colors duration-200 ${
-                  link.active
-                    ? "bg-surface-container-high text-secondary"
-                    : "text-on-surface-variant hover:bg-surface-container hover:text-secondary"
-                }`}
-                href={link.href}
-              >
-                {link.label}
-              </Link>
-            ),
-          )}
-        </nav>
+        {showNavLinks && (
+          <nav className="hidden items-center gap-sm md:flex">
+            {links.map((link) =>
+              link.href === "#" || isExternalLink(link.href) ? (
+                <a
+                  key={link.label}
+                  className={`rounded-lg px-sm py-xs font-label-md text-label-md transition-colors duration-200 ${
+                    link.active
+                      ? "bg-surface-container-high text-secondary"
+                      : "text-on-surface-variant hover:bg-surface-container hover:text-secondary"
+                  }`}
+                  href={link.href}
+                  rel={isExternalLink(link.href) ? "noreferrer noopener" : undefined}
+                  target={isExternalLink(link.href) ? "_blank" : undefined}
+                >
+                  {link.label}
+                </a>
+              ) : (
+                <Link
+                  key={link.label}
+                  className={`rounded-lg px-sm py-xs font-label-md text-label-md transition-colors duration-200 ${
+                    link.active
+                      ? "bg-surface-container-high text-secondary"
+                      : "text-on-surface-variant hover:bg-surface-container hover:text-secondary"
+                  }`}
+                  href={link.href}
+                >
+                  {link.label}
+                </Link>
+              ),
+            )}
+          </nav>
+        )}
       </div>
       <div className="flex items-center gap-md">
         {showProgress && (
@@ -103,12 +107,6 @@ export default function TopNav({
           </div>
         )}
         {showThemeToggle && <ThemeToggle />}
-        <button
-          className="rounded-lg p-2 text-on-surface-variant transition-colors hover:bg-surface-container hover:text-secondary"
-          type="button"
-        >
-          <span className="material-symbols-outlined">notifications</span>
-        </button>
         <div className="flex items-center gap-sm border-l border-outline-variant pl-md">
           {profileImage ? (
             <img

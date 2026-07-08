@@ -6,15 +6,25 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { getClientAuth, isFirebaseConfigured } from "@/lib/firebase/client";
-import { setSessionCookie, signOut as firebaseSignOut } from "@/lib/firebase/auth";
+import {
+  clearServerSession,
+  setSessionCookie,
+  signOut as firebaseSignOut,
+} from "@/lib/firebase/auth";
 import { getUserProfile } from "@/lib/firestore/users";
 import { resolveUserRole } from "@/lib/firestore/roles";
 import type { UserProfile, UserRole } from "@/lib/types";
+
+function getLiveFirebaseUser(): User | null {
+  if (typeof window === "undefined" || !isFirebaseConfigured()) return null;
+  return getClientAuth().currentUser;
+}
 
 interface AuthContextValue {
   user: User | null;
@@ -37,6 +47,7 @@ export function AuthProvider({
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(firebaseReady);
+  const initialAuthCheckRef = useRef(true);
 
   useEffect(() => {
     if (!firebaseReady) {
@@ -45,41 +56,62 @@ export function AuthProvider({
     }
 
     const unsubscribe = onAuthStateChanged(getClientAuth(), async (firebaseUser) => {
-      setUser(firebaseUser);
       if (firebaseUser) {
-        await setSessionCookie(firebaseUser);
-        let resolvedRole: UserRole = "student";
-        let userProfile: UserProfile | null = null;
+        setUser(firebaseUser);
+        setLoading(true);
 
         try {
-          [userProfile, resolvedRole] = await Promise.all([
-            getUserProfile(firebaseUser.uid),
-            resolveUserRole(firebaseUser.uid, firebaseUser.email),
-          ]);
-        } catch {
-          // Keep the session even if Firestore profile/role lookups fail.
-        }
+          let resolvedRole: UserRole = "student";
+          let userProfile: UserProfile | null = null;
 
-        setProfile(
-          userProfile
-            ? { ...userProfile, role: resolvedRole }
-            : {
-                uid: firebaseUser.uid,
-                email: firebaseUser.email ?? "",
-                displayName: firebaseUser.displayName ?? "Student",
-                role: resolvedRole,
-                createdAt: {} as UserProfile["createdAt"],
-              },
-        );
-      } else {
-        setProfile(null);
+          try {
+            [userProfile, resolvedRole] = await Promise.all([
+              getUserProfile(firebaseUser.uid),
+              resolveUserRole(firebaseUser.uid, firebaseUser.email),
+            ]);
+          } catch {
+            // Keep the session even if Firestore profile/role lookups fail.
+          }
+
+          setProfile(
+            userProfile
+              ? { ...userProfile, role: resolvedRole }
+              : {
+                  uid: firebaseUser.uid,
+                  email: firebaseUser.email ?? "",
+                  displayName: firebaseUser.displayName ?? "Student",
+                  role: resolvedRole,
+                  createdAt: {} as UserProfile["createdAt"],
+                },
+          );
+
+          void setSessionCookie(firebaseUser);
+        } finally {
+          setLoading(false);
+          initialAuthCheckRef.current = false;
+        }
+        return;
       }
+
+      setUser(null);
+      setProfile(null);
+
+      const shouldClearSession =
+        !initialAuthCheckRef.current && !getLiveFirebaseUser();
+
+      if (shouldClearSession) {
+        await clearServerSession();
+      }
+
       setLoading(false);
+      initialAuthCheckRef.current = false;
     });
+
     return unsubscribe;
   }, [firebaseReady]);
 
   const signOut = useCallback(async () => {
+    initialAuthCheckRef.current = false;
     await firebaseSignOut();
     setUser(null);
     setProfile(null);
@@ -108,6 +140,16 @@ export function useAuth() {
   return context;
 }
 
+function AuthLoadingScreen() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <span className="material-symbols-outlined animate-spin text-secondary">
+        sync
+      </span>
+    </div>
+  );
+}
+
 export function RouteGuard({
   children,
   requiredRole,
@@ -119,40 +161,56 @@ export function RouteGuard({
 }) {
   const { user, role, profile, loading, firebaseReady, signOut } = useAuth();
   const router = useRouter();
+  const liveUser = firebaseReady ? getLiveFirebaseUser() : null;
+  const effectiveUser = user ?? liveUser;
+  const isSyncing = Boolean(liveUser && !user);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || isSyncing) return;
     if (!firebaseReady) return;
     if (profile?.isBlocked) {
       void signOut();
       router.replace(loginPath);
       return;
     }
-    if (!user) {
+    if (!effectiveUser) {
       router.replace(loginPath);
       return;
     }
     if (requiredRole && role !== requiredRole) {
       router.replace(role === "admin" ? "/admin" : "/user");
     }
-  }, [user, role, loading, firebaseReady, requiredRole, router, loginPath, profile, signOut]);
+  }, [
+    effectiveUser,
+    role,
+    loading,
+    isSyncing,
+    firebaseReady,
+    requiredRole,
+    router,
+    loginPath,
+    profile,
+    signOut,
+  ]);
 
   if (!firebaseReady) {
     return <>{children}</>;
   }
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <span className="material-symbols-outlined animate-spin text-secondary">
-          sync
-        </span>
-      </div>
-    );
+  if (loading || isSyncing) {
+    return <AuthLoadingScreen />;
   }
 
-  if (!user || profile?.isBlocked || (requiredRole && role !== requiredRole)) {
-    return null;
+  if (!effectiveUser) {
+    return <AuthLoadingScreen />;
+  }
+
+  if (profile?.isBlocked) {
+    return <AuthLoadingScreen />;
+  }
+
+  if (requiredRole && role !== requiredRole) {
+    return <AuthLoadingScreen />;
   }
 
   return <>{children}</>;
