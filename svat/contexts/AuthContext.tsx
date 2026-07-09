@@ -18,7 +18,10 @@ import {
   signOut as firebaseSignOut,
 } from "@/lib/firebase/auth";
 import { getUserProfile } from "@/lib/firestore/users";
-import { syncStudentEnrollment } from "@/lib/firestore/accessCodes";
+import {
+  readStudentAccessCodeHint,
+  syncStudentEnrollment,
+} from "@/lib/firestore/accessCodes";
 import { resolveUserRole } from "@/lib/firestore/roles";
 import type { UserProfile, UserRole } from "@/lib/types";
 
@@ -117,15 +120,28 @@ export function AuthProvider({
             // Keep the session even if Firestore profile/role lookups fail.
           }
 
-          if (
-            userProfile &&
-            resolvedRole === "student" &&
-            !userProfile.accessCodeUsed
-          ) {
+          if (resolvedRole === "student" && !userProfile?.accessCodeUsed) {
             try {
-              const syncedCode = await syncStudentEnrollment(firebaseUser.uid);
+              const syncedCode = await syncStudentEnrollment(
+                firebaseUser.uid,
+                readStudentAccessCodeHint(),
+              );
               if (syncedCode) {
-                userProfile = { ...userProfile, accessCodeUsed: syncedCode };
+                userProfile = userProfile
+                  ? { ...userProfile, accessCodeUsed: syncedCode }
+                  : {
+                      uid: firebaseUser.uid,
+                      email: firebaseUser.email ?? "",
+                      displayName: firebaseUser.displayName ?? "Student",
+                      role: "student",
+                      accessCodeUsed: syncedCode,
+                      createdAt: {} as UserProfile["createdAt"],
+                    };
+              } else {
+                const refreshed = await getUserProfile(firebaseUser.uid);
+                if (refreshed?.accessCodeUsed) {
+                  userProfile = refreshed;
+                }
               }
             } catch {
               // Enrollment sync is best-effort.

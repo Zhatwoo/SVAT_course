@@ -19,6 +19,21 @@ import type { AccessCode, AccessCodeStatus } from "../types";
 
 const COLLECTION = "accessCodes";
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const ACCESS_CODE_HINT_KEY = "svat_last_access_code";
+
+export function saveStudentAccessCodeHint(code: string) {
+  if (typeof window === "undefined") return;
+  const normalized = normalizeAccessCode(code);
+  if (normalized) {
+    localStorage.setItem(ACCESS_CODE_HINT_KEY, normalized);
+  }
+}
+
+export function readStudentAccessCodeHint(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  const value = localStorage.getItem(ACCESS_CODE_HINT_KEY);
+  return value ? normalizeAccessCode(value) : undefined;
+}
 
 export function normalizeAccessCode(code: string): string {
   return code.trim().toUpperCase().replace(/\s+/g, "");
@@ -66,6 +81,74 @@ export async function verifyAccessCode(
   return { id: snap.id, ...data };
 }
 
+async function writeStudentEnrollment(
+  uid: string,
+  code: string,
+  profile: Awaited<ReturnType<typeof getUserProfile>>,
+  codeData?: Partial<AccessCode>,
+): Promise<void> {
+  const authUser = getClientAuth().currentUser;
+  const userRef = doc(getClientDb(), "users", uid);
+
+  if (!profile) {
+    await setDoc(userRef, {
+      email: authUser?.email ?? codeData?.usedByEmail ?? "",
+      displayName: authUser?.displayName ?? codeData?.usedByDisplayName ?? "Student",
+      role: "student",
+      accessCodeUsed: code,
+      createdAt: serverTimestamp(),
+    });
+    return;
+  }
+
+  if (!profile.accessCodeUsed) {
+    await setDoc(userRef, { accessCodeUsed: code }, { merge: true });
+  }
+}
+
+function studentOwnsAccessCode(
+  uid: string,
+  codeData: Omit<AccessCode, "id">,
+  authEmail?: string,
+): boolean {
+  if (codeData.usedByUid === uid) {
+    return true;
+  }
+
+  const codeEmail = codeData.usedByEmail?.trim().toLowerCase();
+  return Boolean(
+    authEmail &&
+      codeEmail &&
+      codeEmail === authEmail &&
+      codeData.status === "used",
+  );
+}
+
+async function tryLinkFromCodeDoc(
+  uid: string,
+  code: string,
+  profile: Awaited<ReturnType<typeof getUserProfile>>,
+): Promise<string | null> {
+  const normalized = normalizeAccessCode(code);
+  if (!normalized) {
+    return null;
+  }
+
+  const authEmail = getClientAuth().currentUser?.email?.trim().toLowerCase();
+  const codeSnap = await getDoc(doc(getClientDb(), COLLECTION, normalized));
+  if (!codeSnap.exists()) {
+    return null;
+  }
+
+  const codeData = codeSnap.data() as Omit<AccessCode, "id">;
+  if (!studentOwnsAccessCode(uid, codeData, authEmail)) {
+    return null;
+  }
+
+  await writeStudentEnrollment(uid, normalized, profile, codeData);
+  return normalized;
+}
+
 export async function verifyUserAccessCode(uid: string, code: string): Promise<void> {
   const normalized = normalizeAccessCode(code);
   let profile: Awaited<ReturnType<typeof getUserProfile>> = null;
@@ -99,15 +182,10 @@ export async function verifyUserAccessCode(uid: string, code: string): Promise<v
 
   if (codeSnap.exists()) {
     const codeData = codeSnap.data() as Omit<AccessCode, "id">;
+    const authEmail = getClientAuth().currentUser?.email?.trim().toLowerCase();
 
-    if (codeData.usedByUid === uid) {
-      if (!profile?.accessCodeUsed) {
-        await setDoc(
-          doc(getClientDb(), "users", uid),
-          { accessCodeUsed: normalized },
-          { merge: true },
-        );
-      }
+    if (studentOwnsAccessCode(uid, codeData, authEmail)) {
+      await writeStudentEnrollment(uid, normalized, profile, codeData);
       return;
     }
 
@@ -136,13 +214,30 @@ export async function verifyUserAccessCode(uid: string, code: string): Promise<v
 }
 
 /** Link accessCodeUsed on the student profile when the code doc already references this uid. */
-export async function syncStudentEnrollment(uid: string): Promise<string | null> {
+export async function syncStudentEnrollment(
+  uid: string,
+  preferredCode?: string,
+): Promise<string | null> {
   const profile = await getUserProfile(uid);
   if (profile?.accessCodeUsed) {
     return profile.accessCodeUsed;
   }
 
-  const snap = await getDocs(
+  const hint = preferredCode ?? readStudentAccessCodeHint();
+  if (hint) {
+    try {
+      const linked = await tryLinkFromCodeDoc(uid, hint, profile);
+      if (linked) {
+        return linked;
+      }
+    } catch (error) {
+      if (error instanceof FirebaseError && error.code === "permission-denied") {
+        throw error;
+      }
+    }
+  }
+
+  const byUid = await getDocs(
     query(
       collection(getClientDb(), COLLECTION),
       where("usedByUid", "==", uid),
@@ -150,29 +245,40 @@ export async function syncStudentEnrollment(uid: string): Promise<string | null>
     ),
   );
 
-  if (snap.empty) {
-    return null;
+  if (!byUid.empty) {
+    const codeDoc = byUid.docs[0];
+    const code = codeDoc.id;
+    await writeStudentEnrollment(
+      uid,
+      code,
+      profile,
+      codeDoc.data() as Omit<AccessCode, "id">,
+    );
+    return code;
   }
 
-  const codeDoc = snap.docs[0];
-  const code = codeDoc.id;
-  const codeData = codeDoc.data() as Omit<AccessCode, "id">;
-  const userRef = doc(getClientDb(), "users", uid);
-  const authUser = getClientAuth().currentUser;
+  const authEmail = getClientAuth().currentUser?.email?.trim().toLowerCase();
+  if (authEmail) {
+    const byEmail = await getDocs(
+      query(
+        collection(getClientDb(), COLLECTION),
+        where("usedByEmail", "==", authEmail),
+        limit(1),
+      ),
+    );
 
-  if (!profile) {
-    await setDoc(userRef, {
-      email: authUser?.email ?? codeData.usedByEmail ?? "",
-      displayName: authUser?.displayName ?? codeData.usedByDisplayName ?? "Student",
-      role: "student",
-      accessCodeUsed: code,
-      createdAt: serverTimestamp(),
-    });
-  } else {
-    await setDoc(userRef, { accessCodeUsed: code }, { merge: true });
+    if (!byEmail.empty) {
+      const codeDoc = byEmail.docs[0];
+      const codeData = codeDoc.data() as Omit<AccessCode, "id">;
+      if (codeData.status === "used") {
+        const code = codeDoc.id;
+        await writeStudentEnrollment(uid, code, profile, codeData);
+        return code;
+      }
+    }
   }
 
-  return code;
+  return null;
 }
 
 export async function bindAccessCodeToAccount(

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { FirebaseError } from "firebase/app";
 import { useAuth } from "@/contexts/AuthContext";
-import { syncStudentEnrollment } from "@/lib/firestore/accessCodes";
+import { syncStudentEnrollment, readStudentAccessCodeHint } from "@/lib/firestore/accessCodes";
 import { getCourses } from "@/lib/firestore/courses";
 import { getEpisodes } from "@/lib/firestore/episodes";
 import {
@@ -57,7 +57,16 @@ export function useDashboardCourses() {
       setError(null);
       try {
         if (user && !profile?.accessCodeUsed) {
-          await syncStudentEnrollment(user.uid);
+          const enrolledCode = await syncStudentEnrollment(
+            user.uid,
+            readStudentAccessCodeHint(),
+          );
+          if (!enrolledCode) {
+            setError(
+              "Your account is missing enrollment. Log out, then sign in again with your access code.",
+            );
+            return;
+          }
         }
 
         const [courseData, episodeData] = await Promise.all([
@@ -71,7 +80,7 @@ export function useDashboardCourses() {
         if (!active) return;
         if (err instanceof FirebaseError && err.code === "permission-denied") {
           setError(
-            "Your account is not enrolled yet. Log out, sign up or log in again with your access code, and make sure Firestore rules are published.",
+            "Cannot read courses yet. Log out, sign in again with your access code, then republish the latest firestore.rules.",
           );
           return;
         }
