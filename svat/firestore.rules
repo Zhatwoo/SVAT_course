@@ -52,19 +52,21 @@ service cloud.firestore {
     }
 
     // A blocked account is denied everywhere these helpers are applied.
+    // Use .get() with a default so a MISSING isBlocked field does not error.
     function isBlocked() {
-      return currentUserExists() && userProfileData().isBlocked == true;
+      return currentUserExists() && userProfileData().get('isBlocked', false) == true;
     }
 
     function hasValidAccessCode(data) {
-      return data.accessCodeUsed is string && data.accessCodeUsed.size() > 0;
+      return data.get('accessCodeUsed', '') is string
+        && data.get('accessCodeUsed', '').size() > 0;
     }
 
     // Enrolled = has redeemed an access code and is not blocked.
     function isEnrolled() {
       return currentUserExists()
         && hasValidAccessCode(userProfileData())
-        && userProfileData().isBlocked != true;
+        && userProfileData().get('isBlocked', false) != true;
     }
 
     // Course content is readable only by admins or enrolled, active students.
@@ -89,10 +91,10 @@ service cloud.firestore {
       allow update: if canManageAdminContent()
         || (
           isOwner(userId)
-          && resource.data.isBlocked != true
+          && resource.data.get('isBlocked', false) != true
           && request.resource.data.role == resource.data.role
-          && request.resource.data.isBlocked == resource.data.isBlocked
-          && request.resource.data.blockedReason == resource.data.blockedReason
+          && request.resource.data.get('isBlocked', false) == resource.data.get('isBlocked', false)
+          && request.resource.data.get('blockedReason', '') == resource.data.get('blockedReason', '')
           && (
             !('accessCodeUsed' in resource.data)
             || request.resource.data.accessCodeUsed == resource.data.accessCodeUsed
@@ -100,7 +102,7 @@ service cloud.firestore {
         )
         || (
           isOwner(userId)
-          && resource.data.isBlocked != true
+          && resource.data.get('isBlocked', false) != true
           && request.resource.data.accessCodeUsed is string
           && request.resource.data.accessCodeUsed.size() > 0
           && request.resource.data.diff(resource.data).affectedKeys()
