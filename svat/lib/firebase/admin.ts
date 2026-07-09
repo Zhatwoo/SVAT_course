@@ -4,23 +4,13 @@ import { getApps, initializeApp, cert } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
+import {
+  getAdminProjectId,
+  getAdminStorageBucket,
+  isFirebaseAdminConfigured,
+} from "./admin-config";
 
-export function isFirebaseAdminConfigured(): boolean {
-  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
-  return Boolean(getAdminProjectId() && clientEmail && privateKey && getAdminStorageBucket());
-}
-
-function getAdminProjectId() {
-  return process.env.FIREBASE_ADMIN_PROJECT_ID ?? process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-}
-
-function getAdminStorageBucket() {
-  return (
-    process.env.FIREBASE_ADMIN_STORAGE_BUCKET ??
-    process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
-  );
-}
+export { isFirebaseAdminConfigured };
 
 function getAdminApp() {
   if (getApps().length > 0) {
