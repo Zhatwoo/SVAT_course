@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isFirebaseProjectConfigured } from "@/lib/auth/verify-token";
 import {
   ROLE_COOKIE,
   SESSION_COOKIE,
@@ -21,10 +22,11 @@ const COOKIE_OPTIONS = {
 export async function GET(request: NextRequest) {
   try {
     const serverConfigured = isSessionSecretConfigured();
+    const firebaseProjectConfigured = isFirebaseProjectConfigured();
     const session = await verifySession(request.cookies.get(SESSION_COOKIE)?.value);
     if (!session) {
       return NextResponse.json(
-        { authenticated: false, serverConfigured },
+        { authenticated: false, serverConfigured, firebaseProjectConfigured },
         { status: 401 },
       );
     }
@@ -32,6 +34,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       authenticated: true,
       serverConfigured,
+      firebaseProjectConfigured,
       uid: session.uid,
       role: session.role,
     });
@@ -64,10 +67,11 @@ export async function POST(request: NextRequest) {
       decoded = await verifyIdToken(body.idToken);
     } catch (error) {
       console.error("session POST verify error", error);
-      return NextResponse.json(
-        { error: "Could not verify login token. Check Firebase env vars on Vercel." },
-        { status: 401 },
-      );
+      const message =
+        error instanceof Error && error.message.includes("project ID")
+          ? "Missing Firebase project ID on Vercel. Add FIREBASE_PROJECT_ID=svat-d988d and redeploy."
+          : "Could not verify login token. Redeploy with cleared build cache after adding env vars.";
+      return NextResponse.json({ error: message }, { status: 401 });
     }
 
     let role: "admin" | "student" = "student";
