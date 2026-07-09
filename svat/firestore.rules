@@ -148,9 +148,13 @@ service cloud.firestore {
     }
 
     match /accessCodes/{codeId} {
-      allow get: if (resource.data.status == 'active' && resource.data.code == codeId)
+      allow get: if resource.data.code == codeId
+        && (
+          resource.data.status == 'active'
+          || (isSignedIn() && resource.data.usedByUid == request.auth.uid)
+        );
+      allow list: if canManageAdminContent()
         || (isSignedIn() && resource.data.usedByUid == request.auth.uid);
-      allow list: if canManageAdminContent();
       allow create: if canManageAdminContent()
         && request.resource.data.status == 'active'
         && request.resource.data.code == codeId;

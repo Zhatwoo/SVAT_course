@@ -3,13 +3,16 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   orderBy,
   query,
   runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
 } from "firebase/firestore";
+import { FirebaseError } from "firebase/app";
 import { getClientAuth, getClientDb } from "../firebase/client";
 import { getUserProfile } from "./users";
 import type { AccessCode, AccessCodeStatus } from "../types";
@@ -65,23 +68,45 @@ export async function verifyAccessCode(
 
 export async function verifyUserAccessCode(uid: string, code: string): Promise<void> {
   const normalized = normalizeAccessCode(code);
-  const profile = await getUserProfile(uid);
+  let profile: Awaited<ReturnType<typeof getUserProfile>> = null;
+
+  try {
+    profile = await getUserProfile(uid);
+  } catch (error) {
+    if (error instanceof FirebaseError && error.code === "permission-denied") {
+      throw new Error(
+        "Cannot read your account profile. Deploy firestore.rules in Firebase Console, then try again.",
+      );
+    }
+    throw error;
+  }
 
   if (profile?.accessCodeUsed === normalized) {
     return;
   }
 
-  const codeRef = doc(getClientDb(), COLLECTION, normalized);
-  const codeSnap = await getDoc(codeRef);
+  let codeSnap;
+  try {
+    codeSnap = await getDoc(doc(getClientDb(), COLLECTION, normalized));
+  } catch (error) {
+    if (error instanceof FirebaseError && error.code === "permission-denied") {
+      throw new Error(
+        "Cannot verify access code. Deploy firestore.rules in Firebase Console, then try again.",
+      );
+    }
+    throw error;
+  }
 
   if (codeSnap.exists()) {
     const codeData = codeSnap.data() as Omit<AccessCode, "id">;
 
     if (codeData.usedByUid === uid) {
       if (!profile?.accessCodeUsed) {
-        await updateDoc(doc(getClientDb(), "users", uid), {
-          accessCodeUsed: normalized,
-        });
+        await setDoc(
+          doc(getClientDb(), "users", uid),
+          { accessCodeUsed: normalized },
+          { merge: true },
+        );
       }
       return;
     }
@@ -108,6 +133,46 @@ export async function verifyUserAccessCode(uid: string, code: string): Promise<v
   if (profile.accessCodeUsed !== normalized) {
     throw new Error("Invalid access code for this account.");
   }
+}
+
+/** Link accessCodeUsed on the student profile when the code doc already references this uid. */
+export async function syncStudentEnrollment(uid: string): Promise<string | null> {
+  const profile = await getUserProfile(uid);
+  if (profile?.accessCodeUsed) {
+    return profile.accessCodeUsed;
+  }
+
+  const snap = await getDocs(
+    query(
+      collection(getClientDb(), COLLECTION),
+      where("usedByUid", "==", uid),
+      limit(1),
+    ),
+  );
+
+  if (snap.empty) {
+    return null;
+  }
+
+  const codeDoc = snap.docs[0];
+  const code = codeDoc.id;
+  const codeData = codeDoc.data() as Omit<AccessCode, "id">;
+  const userRef = doc(getClientDb(), "users", uid);
+  const authUser = getClientAuth().currentUser;
+
+  if (!profile) {
+    await setDoc(userRef, {
+      email: authUser?.email ?? codeData.usedByEmail ?? "",
+      displayName: authUser?.displayName ?? codeData.usedByDisplayName ?? "Student",
+      role: "student",
+      accessCodeUsed: code,
+      createdAt: serverTimestamp(),
+    });
+  } else {
+    await setDoc(userRef, { accessCodeUsed: code }, { merge: true });
+  }
+
+  return code;
 }
 
 export async function bindAccessCodeToAccount(

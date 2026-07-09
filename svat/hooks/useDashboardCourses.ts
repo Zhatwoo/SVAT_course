@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { FirebaseError } from "firebase/app";
 import { useAuth } from "@/contexts/AuthContext";
+import { syncStudentEnrollment } from "@/lib/firestore/accessCodes";
 import { getCourses } from "@/lib/firestore/courses";
 import { getEpisodes } from "@/lib/firestore/episodes";
 import {
@@ -34,7 +36,7 @@ export function getCategoryIcon(category: string) {
 }
 
 export function useDashboardCourses() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [progress, setProgress] = useState<UserProgress[]>([]);
@@ -54,6 +56,10 @@ export function useDashboardCourses() {
       setLoading(true);
       setError(null);
       try {
+        if (user && !profile?.accessCodeUsed) {
+          await syncStudentEnrollment(user.uid);
+        }
+
         const [courseData, episodeData] = await Promise.all([
           getCourses(),
           getEpisodes(),
@@ -61,8 +67,14 @@ export function useDashboardCourses() {
         if (!active) return;
         setCourses(courseData.filter((c) => c.isPublished));
         setEpisodes(episodeData);
-      } catch {
+      } catch (err) {
         if (!active) return;
+        if (err instanceof FirebaseError && err.code === "permission-denied") {
+          setError(
+            "Your account is not enrolled yet. Log out, sign up or log in again with your access code, and make sure Firestore rules are published.",
+          );
+          return;
+        }
         setError("Failed to load courses. Please try again.");
       } finally {
         if (active) setLoading(false);
@@ -73,7 +85,7 @@ export function useDashboardCourses() {
     return () => {
       active = false;
     };
-  }, [user]);
+  }, [user, profile?.accessCodeUsed]);
 
   useEffect(() => {
     if (!user) {
