@@ -20,6 +20,7 @@ import { resolveUserRole } from "../firestore/roles";
 import {
   bindAccessCodeToAccount,
   normalizeAccessCode,
+  saveStudentAccessCodeHint,
   syncStudentEnrollment,
   verifyAccessCode,
   verifyUserAccessCode,
@@ -143,6 +144,7 @@ export async function signUp(
       normalizedName,
     );
 
+    saveStudentAccessCodeHint(normalizedCode);
     await setSessionCookie(credential.user);
     return credential.user;
   } catch (error) {
@@ -201,7 +203,10 @@ export async function signIn(
         role !== "admin" ? normalizedCode : undefined,
       );
       if (role !== "admin") {
-        await syncStudentEnrollment(credential.user.uid);
+        await syncStudentEnrollment(credential.user.uid, normalizedCode);
+        if (normalizedCode) {
+          saveStudentAccessCodeHint(normalizedCode);
+        }
       }
     } catch {
       // Login should still succeed even if profile write fails.

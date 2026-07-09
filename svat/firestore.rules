@@ -152,9 +152,20 @@ service cloud.firestore {
         && (
           resource.data.status == 'active'
           || (isSignedIn() && resource.data.usedByUid == request.auth.uid)
+          || (
+            isSignedIn()
+            && resource.data.status == 'used'
+            && resource.data.usedByEmail != null
+            && resource.data.usedByEmail.lower() == request.auth.token.email.lower()
+          )
         );
       allow list: if canManageAdminContent()
-        || (isSignedIn() && resource.data.usedByUid == request.auth.uid);
+        || (isSignedIn() && resource.data.usedByUid == request.auth.uid)
+        || (
+          isSignedIn()
+          && resource.data.usedByEmail != null
+          && resource.data.usedByEmail.lower() == request.auth.token.email.lower()
+        );
       allow create: if canManageAdminContent()
         && request.resource.data.status == 'active'
         && request.resource.data.code == codeId;
