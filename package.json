@@ -1,5 +1,9 @@
 {
-  "dependencies": {
-    "firebase": "^12.15.0"
+  "name": "svat-course",
+  "private": true,
+  "scripts": {
+    "build": "npm run build --prefix svat",
+    "dev": "npm run dev --prefix svat",
+    "start": "npm run start --prefix svat"
   }
 }
