@@ -31,6 +31,10 @@ function getSessionSecret(): string {
   return "";
 }
 
+export function isSessionSecretConfigured(): boolean {
+  return getSessionSecret().length > 0;
+}
+
 function toBase64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const b of bytes) binary += String.fromCharCode(b);

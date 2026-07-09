@@ -4,6 +4,7 @@ import {
   ROLE_COOKIE,
   SESSION_COOKIE,
   SESSION_MAX_AGE_SECONDS,
+  isSessionSecretConfigured,
   signSession,
 } from "@/lib/auth/session";
 import { verifyIdToken } from "@/lib/auth/verify-token";
@@ -21,6 +22,13 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as { idToken?: string };
     if (!body.idToken) {
       return NextResponse.json({ error: "Missing idToken" }, { status: 400 });
+    }
+
+    if (!isSessionSecretConfigured()) {
+      return NextResponse.json(
+        { error: "Server misconfigured: set SESSION_SECRET in Vercel environment variables." },
+        { status: 503 },
+      );
     }
 
     // Real signature verification (Admin SDK or Google REST). Throws on forgery.
