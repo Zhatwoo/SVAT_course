@@ -109,7 +109,8 @@ export function useDashboardCourses() {
   }, [user]);
 
   const coursesWithProgress = useMemo((): CourseWithProgress[] => {
-    return courses.map((course) => {
+    return courses
+      .map((course) => {
       const courseEpisodes = episodes.filter((e) => e.courseId === course.id);
       const courseEpisodeIds = new Set(courseEpisodes.map((episode) => episode.id));
       const courseProgress = progress.filter(
@@ -141,7 +142,10 @@ export function useDashboardCourses() {
             ? getYouTubeThumbnail(firstEpisode.youtubeVideoId)
             : undefined),
       };
-    });
+    })
+      // Hide courses that have no episodes yet so leftover/empty courses
+      // never show up on the student dashboard.
+      .filter((course) => course.totalEpisodes > 0);
   }, [courses, episodes, progress]);
 
   const overallProgress = useMemo(() => {
