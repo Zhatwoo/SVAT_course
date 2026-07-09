@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { resolveServerUserRole } from "@/lib/auth/server-role";
 import {
   ROLE_COOKIE,
   SESSION_COOKIE,
@@ -8,7 +7,6 @@ import {
   signSession,
   verifySession,
 } from "@/lib/auth/session";
-import { verifyIdToken } from "@/lib/auth/verify-token";
 
 export const runtime = "nodejs";
 
@@ -21,21 +19,29 @@ const COOKIE_OPTIONS = {
 };
 
 export async function GET(request: NextRequest) {
-  const serverConfigured = isSessionSecretConfigured();
-  const session = await verifySession(request.cookies.get(SESSION_COOKIE)?.value);
-  if (!session) {
+  try {
+    const serverConfigured = isSessionSecretConfigured();
+    const session = await verifySession(request.cookies.get(SESSION_COOKIE)?.value);
+    if (!session) {
+      return NextResponse.json(
+        { authenticated: false, serverConfigured },
+        { status: 401 },
+      );
+    }
+
+    return NextResponse.json({
+      authenticated: true,
+      serverConfigured,
+      uid: session.uid,
+      role: session.role,
+    });
+  } catch (error) {
+    console.error("session GET error", error);
     return NextResponse.json(
-      { authenticated: false, serverConfigured },
-      { status: 401 },
+      { authenticated: false, error: "Session check failed" },
+      { status: 500 },
     );
   }
-
-  return NextResponse.json({
-    authenticated: true,
-    serverConfigured,
-    uid: session.uid,
-    role: session.role,
-  });
 }
 
 export async function POST(request: NextRequest) {
@@ -52,11 +58,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Real signature verification (Admin SDK or Google REST). Throws on forgery.
+    const { verifyIdToken } = await import("@/lib/auth/verify-token");
     const decoded = await verifyIdToken(body.idToken);
 
     let role: "admin" | "student" = "student";
     try {
+      const { resolveServerUserRole } = await import("@/lib/auth/server-role");
       role = await resolveServerUserRole(decoded.uid, decoded.email, body.idToken);
     } catch {
       // Default to student when role lookup is unavailable.
@@ -70,7 +77,6 @@ export async function POST(request: NextRequest) {
 
     const response = NextResponse.json({ ok: true, role });
     response.cookies.set(SESSION_COOKIE, sessionValue, COOKIE_OPTIONS);
-    // Clear any legacy plaintext role cookie from older builds.
     response.cookies.set(ROLE_COOKIE, "", { ...COOKIE_OPTIONS, maxAge: 0 });
     return response;
   } catch (error) {

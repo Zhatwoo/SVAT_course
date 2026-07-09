@@ -36,23 +36,11 @@ export function isSessionSecretConfigured(): boolean {
 }
 
 function toBase64Url(bytes: Uint8Array): string {
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
-  const base64 = btoa(binary);
-  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return Buffer.from(bytes).toString("base64url");
 }
 
 function fromBase64Url(value: string): Uint8Array {
-  const base64 = value
-    .replace(/-/g, "+")
-    .replace(/_/g, "/")
-    .padEnd(value.length + ((4 - (value.length % 4)) % 4), "=");
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
+  return new Uint8Array(Buffer.from(value, "base64url"));
 }
 
 /** Copy into a fresh ArrayBuffer so the bytes satisfy the BufferSource type. */

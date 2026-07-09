@@ -1,7 +1,5 @@
 import "server-only";
 
-import { isFirebaseAdminConfigured, getAdminAuth } from "@/lib/firebase/admin";
-
 export interface VerifiedToken {
   uid: string;
   email?: string | null;
@@ -48,6 +46,7 @@ async function verifyIdTokenViaRest(idToken: string): Promise<VerifiedToken> {
 }
 
 export async function verifyIdToken(idToken: string): Promise<VerifiedToken> {
+  const { isFirebaseAdminConfigured, getAdminAuth } = await import("@/lib/firebase/admin");
   if (isFirebaseAdminConfigured()) {
     const decoded = await getAdminAuth().verifyIdToken(idToken);
     return {
