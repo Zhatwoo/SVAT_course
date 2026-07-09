@@ -1,13 +1,12 @@
 import type { NextConfig } from "next";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const projectDir = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
-  turbopack: {
-    root: projectDir,
-  },
+  serverExternalPackages: [
+    "firebase-admin",
+    "@grpc/grpc-js",
+    "google-gax",
+    "protobufjs",
+  ],
 };
 
 export default nextConfig;

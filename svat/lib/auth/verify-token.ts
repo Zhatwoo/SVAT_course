@@ -1,3 +1,5 @@
+import "server-only";
+
 import { isFirebaseAdminConfigured, getAdminAuth } from "@/lib/firebase/admin";
 
 export interface VerifiedToken {
