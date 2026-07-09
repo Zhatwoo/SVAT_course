@@ -1,47 +1,42 @@
 import "server-only";
 
+import { createRemoteJWKSet, jwtVerify } from "jose";
+
 export interface VerifiedToken {
   uid: string;
   email?: string | null;
 }
 
+const FIREBASE_JWKS = createRemoteJWKSet(
+  new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"),
+);
+
+function getFirebaseProjectId(): string {
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  if (!projectId) {
+    throw new Error("Missing NEXT_PUBLIC_FIREBASE_PROJECT_ID");
+  }
+  return projectId;
+}
+
 /**
- * Verify a Firebase ID token against Google's servers. There is intentionally
- * NO offline/decode-only fallback: an unverifiable token must fail closed so a
- * forged JWT can never be accepted.
+ * Verify a Firebase ID token using Google's public signing keys.
+ * Works on Vercel/serverless without Firebase Admin SDK or API-key REST calls.
  */
-async function verifyIdTokenViaRest(idToken: string): Promise<VerifiedToken> {
-  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
-  if (!apiKey) {
-    throw new Error("Missing NEXT_PUBLIC_FIREBASE_API_KEY");
-  }
+async function verifyIdTokenViaJwt(idToken: string): Promise<VerifiedToken> {
+  const projectId = getFirebaseProjectId();
+  const { payload } = await jwtVerify(idToken, FIREBASE_JWKS, {
+    issuer: `https://securetoken.google.com/${projectId}`,
+    audience: projectId,
+  });
 
-  const response = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idToken }),
-      cache: "no-store",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error("Invalid idToken");
-  }
-
-  const data = (await response.json()) as {
-    users?: Array<{ localId?: string; email?: string }>;
-  };
-
-  const user = data.users?.[0];
-  if (!user?.localId) {
+  if (!payload.sub) {
     throw new Error("Invalid idToken");
   }
 
   return {
-    uid: user.localId,
-    email: user.email ?? null,
+    uid: payload.sub,
+    email: typeof payload.email === "string" ? payload.email : null,
   };
 }
 
@@ -59,5 +54,5 @@ export async function verifyIdToken(idToken: string): Promise<VerifiedToken> {
     }
   }
 
-  return verifyIdTokenViaRest(idToken);
+  return verifyIdTokenViaJwt(idToken);
 }
