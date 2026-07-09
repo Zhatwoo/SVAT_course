@@ -16,8 +16,16 @@ const AUTH_MESSAGES: Record<string, string> = {
   "auth/missing-password": "Please enter your password.",
 };
 
+const FIRESTORE_MESSAGES: Record<string, string> = {
+  "permission-denied":
+    "Firestore blocked this request. Deploy the latest firestore.rules in Firebase Console, or sign up first if you do not have an account yet.",
+};
+
 export function getFirebaseErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof FirebaseError) {
+    if (FIRESTORE_MESSAGES[error.code]) {
+      return FIRESTORE_MESSAGES[error.code];
+    }
     return AUTH_MESSAGES[error.code] ?? error.message ?? fallback;
   }
   if (error instanceof Error && error.message) {

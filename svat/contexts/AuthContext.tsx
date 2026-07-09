@@ -18,6 +18,7 @@ import {
   signOut as firebaseSignOut,
 } from "@/lib/firebase/auth";
 import { getUserProfile } from "@/lib/firestore/users";
+import { syncStudentEnrollment } from "@/lib/firestore/accessCodes";
 import { resolveUserRole } from "@/lib/firestore/roles";
 import type { UserProfile, UserRole } from "@/lib/types";
 
@@ -114,6 +115,21 @@ export function AuthProvider({
             );
           } catch {
             // Keep the session even if Firestore profile/role lookups fail.
+          }
+
+          if (
+            userProfile &&
+            resolvedRole === "student" &&
+            !userProfile.accessCodeUsed
+          ) {
+            try {
+              const syncedCode = await syncStudentEnrollment(firebaseUser.uid);
+              if (syncedCode) {
+                userProfile = { ...userProfile, accessCodeUsed: syncedCode };
+              }
+            } catch {
+              // Enrollment sync is best-effort.
+            }
           }
 
           setProfile(

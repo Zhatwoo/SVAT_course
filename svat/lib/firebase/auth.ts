@@ -20,6 +20,7 @@ import { resolveUserRole } from "../firestore/roles";
 import {
   bindAccessCodeToAccount,
   normalizeAccessCode,
+  syncStudentEnrollment,
   verifyAccessCode,
   verifyUserAccessCode,
 } from "../firestore/accessCodes";
@@ -76,15 +77,26 @@ async function ensureUserProfile(
 ) {
   const ref = doc(getClientDb(), "users", user.uid);
   const snap = await getDoc(ref);
-  if (snap.exists()) return;
 
-  await setDoc(ref, {
-    email: user.email ?? "",
-    displayName: displayName ?? user.displayName ?? "Student",
-    role: "student",
-    ...(accessCodeUsed ? { accessCodeUsed } : {}),
-    createdAt: serverTimestamp(),
-  });
+  if (!snap.exists()) {
+    if (!accessCodeUsed) {
+      return;
+    }
+
+    await setDoc(ref, {
+      email: user.email ?? "",
+      displayName: displayName ?? user.displayName ?? "Student",
+      role: "student",
+      accessCodeUsed,
+      createdAt: serverTimestamp(),
+    });
+    return;
+  }
+
+  const data = snap.data();
+  if (accessCodeUsed && !data.accessCodeUsed) {
+    await setDoc(ref, { accessCodeUsed }, { merge: true });
+  }
 }
 
 export async function signUp(
@@ -183,7 +195,14 @@ export async function signIn(
     }
 
     try {
-      await ensureUserProfile(credential.user);
+      await ensureUserProfile(
+        credential.user,
+        undefined,
+        role !== "admin" ? normalizedCode : undefined,
+      );
+      if (role !== "admin") {
+        await syncStudentEnrollment(credential.user.uid);
+      }
     } catch {
       // Login should still succeed even if profile write fails.
     }
