@@ -56,11 +56,14 @@ service cloud.firestore {
       return currentUserExists() && userProfileData().isBlocked == true;
     }
 
+    function hasValidAccessCode(data) {
+      return data.accessCodeUsed is string && data.accessCodeUsed.size() > 0;
+    }
+
     // Enrolled = has redeemed an access code and is not blocked.
     function isEnrolled() {
       return currentUserExists()
-        && userProfileData().accessCodeUsed is string
-        && userProfileData().accessCodeUsed.size() > 0
+        && hasValidAccessCode(userProfileData())
         && userProfileData().isBlocked != true;
     }
 
@@ -98,8 +101,8 @@ service cloud.firestore {
         || (
           isOwner(userId)
           && resource.data.isBlocked != true
-          && !('accessCodeUsed' in resource.data)
           && request.resource.data.accessCodeUsed is string
+          && request.resource.data.accessCodeUsed.size() > 0
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['accessCodeUsed'])
         );

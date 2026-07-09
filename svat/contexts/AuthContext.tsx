@@ -20,7 +20,7 @@ import {
 import { getUserProfile } from "@/lib/firestore/users";
 import {
   readStudentAccessCodeHint,
-  syncStudentEnrollment,
+  repairStudentEnrollment,
 } from "@/lib/firestore/accessCodes";
 import { resolveUserRole } from "@/lib/firestore/roles";
 import type { UserProfile, UserRole } from "@/lib/types";
@@ -120,9 +120,9 @@ export function AuthProvider({
             // Keep the session even if Firestore profile/role lookups fail.
           }
 
-          if (resolvedRole === "student" && !userProfile?.accessCodeUsed) {
+          if (resolvedRole === "student" && !userProfile?.accessCodeUsed?.trim()) {
             try {
-              const syncedCode = await syncStudentEnrollment(
+              const syncedCode = await repairStudentEnrollment(
                 firebaseUser.uid,
                 readStudentAccessCodeHint(),
               );
