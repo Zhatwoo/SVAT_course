@@ -1,3 +1,5 @@
+import "server-only";
+
 import { isFirebaseAdminConfigured, getAdminDb } from "@/lib/firebase/admin";
 import type { UserRole } from "@/lib/types";
 

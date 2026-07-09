@@ -6,6 +6,7 @@ import {
   SESSION_MAX_AGE_SECONDS,
   isSessionSecretConfigured,
   signSession,
+  verifySession,
 } from "@/lib/auth/session";
 import { verifyIdToken } from "@/lib/auth/verify-token";
 
@@ -16,6 +17,19 @@ const COOKIE_OPTIONS = {
   path: "/",
   maxAge: SESSION_MAX_AGE_SECONDS,
 };
+
+export async function GET(request: NextRequest) {
+  const session = await verifySession(request.cookies.get(SESSION_COOKIE)?.value);
+  if (!session) {
+    return NextResponse.json({ authenticated: false }, { status: 401 });
+  }
+
+  return NextResponse.json({
+    authenticated: true,
+    uid: session.uid,
+    role: session.role,
+  });
+}
 
 export async function POST(request: NextRequest) {
   try {

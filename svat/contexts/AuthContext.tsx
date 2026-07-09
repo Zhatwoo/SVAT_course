@@ -21,6 +21,23 @@ import { getUserProfile } from "@/lib/firestore/users";
 import { resolveUserRole } from "@/lib/firestore/roles";
 import type { UserProfile, UserRole } from "@/lib/types";
 
+const AUTH_PROFILE_TIMEOUT_MS = 6000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch(() => {
+        clearTimeout(timer);
+        resolve(fallback);
+      });
+  });
+}
+
 function getLiveFirebaseUser(): User | null {
   if (typeof window === "undefined" || !isFirebaseConfigured()) return null;
   return getClientAuth().currentUser;
@@ -46,8 +63,30 @@ export function AuthProvider({
 }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [sessionRole, setSessionRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(firebaseReady);
   const initialAuthCheckRef = useRef(true);
+
+  useEffect(() => {
+    if (!firebaseReady) return;
+
+    let cancelled = false;
+
+    fetch("/api/auth/session", { credentials: "same-origin" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { role?: UserRole } | null) => {
+        if (!cancelled && (data?.role === "admin" || data?.role === "student")) {
+          setSessionRole(data.role);
+        }
+      })
+      .catch(() => {
+        // Session lookup is best-effort; Firebase auth remains the source of truth.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [firebaseReady]);
 
   useEffect(() => {
     if (!firebaseReady) {
@@ -65,10 +104,14 @@ export function AuthProvider({
           let userProfile: UserProfile | null = null;
 
           try {
-            [userProfile, resolvedRole] = await Promise.all([
-              getUserProfile(firebaseUser.uid),
-              resolveUserRole(firebaseUser.uid, firebaseUser.email),
-            ]);
+            [userProfile, resolvedRole] = await withTimeout(
+              Promise.all([
+                getUserProfile(firebaseUser.uid),
+                resolveUserRole(firebaseUser.uid, firebaseUser.email),
+              ]),
+              AUTH_PROFILE_TIMEOUT_MS,
+              [null, "student" as UserRole],
+            );
           } catch {
             // Keep the session even if Firestore profile/role lookups fail.
           }
@@ -100,6 +143,7 @@ export function AuthProvider({
         !initialAuthCheckRef.current && !getLiveFirebaseUser();
 
       if (shouldClearSession) {
+        setSessionRole(null);
         await clearServerSession();
       }
 
@@ -115,18 +159,22 @@ export function AuthProvider({
     await firebaseSignOut();
     setUser(null);
     setProfile(null);
+    setSessionRole(null);
   }, []);
 
   const value = useMemo(
     () => ({
       user,
       profile,
-      role: profile?.role ?? null,
+      role:
+        sessionRole === "admin"
+          ? "admin"
+          : (profile?.role ?? sessionRole ?? null),
       loading,
       firebaseReady,
       signOut,
     }),
-    [user, profile, loading, firebaseReady, signOut],
+    [user, profile, sessionRole, loading, firebaseReady, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -164,9 +212,33 @@ export function RouteGuard({
   const liveUser = firebaseReady ? getLiveFirebaseUser() : null;
   const effectiveUser = user ?? liveUser;
   const isSyncing = Boolean(liveUser && !user);
+  const [syncTimedOut, setSyncTimedOut] = useState(false);
+  const [authTimedOut, setAuthTimedOut] = useState(false);
 
   useEffect(() => {
-    if (loading || isSyncing) return;
+    if (!isSyncing) {
+      setSyncTimedOut(false);
+      return;
+    }
+
+    const timer = setTimeout(() => setSyncTimedOut(true), 4000);
+    return () => clearTimeout(timer);
+  }, [isSyncing]);
+
+  useEffect(() => {
+    if (!loading && !isSyncing) {
+      setAuthTimedOut(false);
+      return;
+    }
+
+    const timer = setTimeout(() => setAuthTimedOut(true), 10000);
+    return () => clearTimeout(timer);
+  }, [loading, isSyncing]);
+
+  const isWaitingForAuth = (loading || (isSyncing && !syncTimedOut)) && !authTimedOut;
+
+  useEffect(() => {
+    if (isWaitingForAuth) return;
     if (!firebaseReady) return;
     if (profile?.isBlocked) {
       void signOut();
@@ -177,27 +249,37 @@ export function RouteGuard({
       router.replace(loginPath);
       return;
     }
+    if (requiredRole && role === null) {
+      return;
+    }
     if (requiredRole && role !== requiredRole) {
       router.replace(role === "admin" ? "/admin" : "/user");
     }
   }, [
     effectiveUser,
     role,
-    loading,
-    isSyncing,
+    isWaitingForAuth,
     firebaseReady,
     requiredRole,
     router,
     loginPath,
     profile,
     signOut,
+    authTimedOut,
   ]);
+
+  useEffect(() => {
+    if (!authTimedOut) return;
+    if (!effectiveUser) {
+      router.replace(loginPath);
+    }
+  }, [authTimedOut, effectiveUser, loginPath, router]);
 
   if (!firebaseReady) {
     return <>{children}</>;
   }
 
-  if (loading || isSyncing) {
+  if (isWaitingForAuth) {
     return <AuthLoadingScreen />;
   }
 
@@ -206,6 +288,10 @@ export function RouteGuard({
   }
 
   if (profile?.isBlocked) {
+    return <AuthLoadingScreen />;
+  }
+
+  if (requiredRole && role === null) {
     return <AuthLoadingScreen />;
   }
 
