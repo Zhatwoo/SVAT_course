@@ -20,8 +20,8 @@ import { resolveUserRole } from "../firestore/roles";
 import {
   bindAccessCodeToAccount,
   normalizeAccessCode,
+  repairStudentEnrollment,
   saveStudentAccessCodeHint,
-  syncStudentEnrollment,
   verifyAccessCode,
   verifyUserAccessCode,
 } from "../firestore/accessCodes";
@@ -203,7 +203,7 @@ export async function signIn(
         role !== "admin" ? normalizedCode : undefined,
       );
       if (role !== "admin") {
-        await syncStudentEnrollment(credential.user.uid, normalizedCode);
+        await repairStudentEnrollment(credential.user.uid, normalizedCode);
         if (normalizedCode) {
           saveStudentAccessCodeHint(normalizedCode);
         }

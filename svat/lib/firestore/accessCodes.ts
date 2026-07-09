@@ -35,6 +35,10 @@ export function readStudentAccessCodeHint(): string | undefined {
   return value ? normalizeAccessCode(value) : undefined;
 }
 
+function hasValidEnrollmentCode(code?: string | null): code is string {
+  return typeof code === "string" && code.trim().length > 0;
+}
+
 export function normalizeAccessCode(code: string): string {
   return code.trim().toUpperCase().replace(/\s+/g, "");
 }
@@ -101,7 +105,7 @@ async function writeStudentEnrollment(
     return;
   }
 
-  if (!profile.accessCodeUsed) {
+  if (!hasValidEnrollmentCode(profile.accessCodeUsed)) {
     await setDoc(userRef, { accessCodeUsed: code }, { merge: true });
   }
 }
@@ -214,12 +218,44 @@ export async function verifyUserAccessCode(uid: string, code: string): Promise<v
 }
 
 /** Link accessCodeUsed on the student profile when the code doc already references this uid. */
+export async function repairStudentEnrollment(
+  uid: string,
+  preferredCode?: string,
+): Promise<string | null> {
+  const authUser = getClientAuth().currentUser;
+  if (authUser) {
+    try {
+      const idToken = await authUser.getIdToken();
+      const response = await fetch("/api/enrollment/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idToken,
+          accessCode: preferredCode ?? readStudentAccessCodeHint(),
+        }),
+        credentials: "same-origin",
+      });
+
+      if (response.ok) {
+        const data = (await response.json()) as { accessCodeUsed?: string };
+        if (hasValidEnrollmentCode(data.accessCodeUsed)) {
+          return data.accessCodeUsed;
+        }
+      }
+    } catch {
+      // Fall back to client-side Firestore repair.
+    }
+  }
+
+  return syncStudentEnrollment(uid, preferredCode);
+}
+
 export async function syncStudentEnrollment(
   uid: string,
   preferredCode?: string,
 ): Promise<string | null> {
   const profile = await getUserProfile(uid);
-  if (profile?.accessCodeUsed) {
+  if (hasValidEnrollmentCode(profile?.accessCodeUsed)) {
     return profile.accessCodeUsed;
   }
 

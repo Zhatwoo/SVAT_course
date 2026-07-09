@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { FirebaseError } from "firebase/app";
 import { useAuth } from "@/contexts/AuthContext";
-import { syncStudentEnrollment, readStudentAccessCodeHint } from "@/lib/firestore/accessCodes";
+import { repairStudentEnrollment, readStudentAccessCodeHint } from "@/lib/firestore/accessCodes";
 import { getCourses } from "@/lib/firestore/courses";
 import { getEpisodes } from "@/lib/firestore/episodes";
 import {
@@ -23,6 +23,10 @@ export type CourseWithProgress = Course & {
   courseHref: string;
   displayThumbnail?: string;
 };
+
+function hasValidEnrollment(code?: string | null): boolean {
+  return typeof code === "string" && code.trim().length > 0;
+}
 
 const CATEGORY_ICONS: Record<string, string> = {
   forex: "payments",
@@ -56,14 +60,14 @@ export function useDashboardCourses() {
       setLoading(true);
       setError(null);
       try {
-        if (user && !profile?.accessCodeUsed) {
-          const enrolledCode = await syncStudentEnrollment(
+        if (user && !hasValidEnrollment(profile?.accessCodeUsed)) {
+          const enrolledCode = await repairStudentEnrollment(
             user.uid,
             readStudentAccessCodeHint(),
           );
           if (!enrolledCode) {
             setError(
-              "Your account is missing enrollment. Log out, then sign in again with your access code.",
+              "Walang naka-link na access code sa account mo. Mag-log out, tapos mag-sign in ulit gamit ang access code mo.",
             );
             return;
           }
@@ -80,7 +84,7 @@ export function useDashboardCourses() {
         if (!active) return;
         if (err instanceof FirebaseError && err.code === "permission-denied") {
           setError(
-            "Cannot read courses yet. Log out, sign in again with your access code, then republish the latest firestore.rules.",
+            "Hindi pa mabasa ang courses. I-publish ang latest firestore.rules, mag-log out, tapos mag-sign in ulit gamit ang access code.",
           );
           return;
         }
