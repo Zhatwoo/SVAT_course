@@ -58,29 +58,6 @@ export default function AdminLoginPage() {
         return;
       }
 
-      const sessionResponse = await fetch("/api/auth/session", {
-        credentials: "same-origin",
-        cache: "no-store",
-      });
-
-      if (!sessionResponse.ok) {
-        await signOut();
-        const sessionData = (await sessionResponse.json().catch(() => null)) as
-          | { error?: string; serverConfigured?: boolean }
-          | null;
-        if (sessionData?.serverConfigured === false) {
-          setError(
-            "Server session is not configured. Add SESSION_SECRET in Vercel environment variables, then redeploy.",
-          );
-        } else {
-          setError(
-            sessionData?.error ??
-              "Login succeeded but the server session could not be created. Please try again.",
-          );
-        }
-        return;
-      }
-
       router.replace("/admin");
       router.refresh();
     } catch (err) {
