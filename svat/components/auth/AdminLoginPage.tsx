@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 import { resetPassword, signIn, signOut } from "@/lib/firebase/auth";
 import { getFirebaseErrorMessage } from "@/lib/firebase/errors";
@@ -14,6 +14,22 @@ export default function AdminLoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [resetSent, setResetSent] = useState(false);
+  const [serverConfigured, setServerConfigured] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" })
+      .then(async (response) => {
+        const data = (await response.json().catch(() => null)) as
+          | { serverConfigured?: boolean }
+          | null;
+        if (data && typeof data.serverConfigured === "boolean") {
+          setServerConfigured(data.serverConfigured);
+        }
+      })
+      .catch(() => {
+        // Ignore — login can still be attempted.
+      });
+  }, []);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -39,6 +55,29 @@ export default function AdminLoginPage() {
       if (role !== "admin") {
         await signOut();
         setError("Access denied. This account does not have administrator privileges.");
+        return;
+      }
+
+      const sessionResponse = await fetch("/api/auth/session", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+
+      if (!sessionResponse.ok) {
+        await signOut();
+        const sessionData = (await sessionResponse.json().catch(() => null)) as
+          | { error?: string; serverConfigured?: boolean }
+          | null;
+        if (sessionData?.serverConfigured === false) {
+          setError(
+            "Server session is not configured. Add SESSION_SECRET in Vercel environment variables, then redeploy.",
+          );
+        } else {
+          setError(
+            sessionData?.error ??
+              "Login succeeded but the server session could not be created. Please try again.",
+          );
+        }
         return;
       }
 
@@ -234,6 +273,13 @@ export default function AdminLoginPage() {
             {resetSent && (
               <p className="font-body-sm text-body-sm text-on-tertiary-container">
                 Password reset email sent. Check your inbox.
+              </p>
+            )}
+
+            {!serverConfigured && (
+              <p className="font-body-sm text-body-sm text-error" role="alert">
+                Deployment misconfiguration: set SESSION_SECRET in Vercel project settings,
+                then redeploy.
               </p>
             )}
 

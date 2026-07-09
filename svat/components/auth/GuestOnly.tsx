@@ -1,41 +1,76 @@
 "use client";
 
-import { useAuth } from "@/contexts/AuthContext";
-import { getClientAuth, isFirebaseConfigured } from "@/lib/firebase/client";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+
+function AuthGateLoading({ label = "Loading..." }: { label?: string }) {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-6 text-center text-on-surface">
+      <span className="material-symbols-outlined animate-spin text-3xl text-secondary">
+        sync
+      </span>
+      <p className="text-sm text-on-surface-variant">{label}</p>
+    </div>
+  );
+}
+
+const CHECK_TIMEOUT_MS = 5000;
 
 export function GuestOnly({ children }: { children: React.ReactNode }) {
-  const { user, role, loading, firebaseReady } = useAuth();
   const router = useRouter();
-  const liveUser =
-    typeof window !== "undefined" && firebaseReady && isFirebaseConfigured()
-      ? getClientAuth().currentUser
-      : null;
-  const effectiveUser = user ?? liveUser;
-  const isSyncing = Boolean(liveUser && !user);
+  const [ready, setReady] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
+  const resolvedRef = useRef(false);
 
   useEffect(() => {
-    if (!firebaseReady || loading || isSyncing || !effectiveUser) return;
-    router.replace(role === "admin" ? "/admin" : "/user");
-  }, [effectiveUser, role, loading, isSyncing, firebaseReady, router]);
+    let cancelled = false;
 
-  if (!firebaseReady) {
-    return <>{children}</>;
+    async function checkSession(force = false) {
+      if (cancelled || resolvedRef.current) return;
+
+      try {
+        const response = await fetch("/api/auth/session", {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+
+        if (response.ok) {
+          const session = (await response.json()) as { role?: string };
+          resolvedRef.current = true;
+          setRedirecting(true);
+          router.replace(session.role === "admin" ? "/admin" : "/user");
+          return;
+        }
+
+        if (!force) return;
+        resolvedRef.current = true;
+        setReady(true);
+      } catch {
+        if (!cancelled && !resolvedRef.current) {
+          resolvedRef.current = true;
+          setReady(true);
+        }
+      }
+    }
+
+    const timeout = setTimeout(() => {
+      void checkSession(true);
+    }, CHECK_TIMEOUT_MS);
+
+    void checkSession(false);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [router]);
+
+  if (redirecting) {
+    return <AuthGateLoading label="Redirecting..." />;
   }
 
-  if (loading || isSyncing) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <span className="material-symbols-outlined animate-spin text-secondary">
-          sync
-        </span>
-      </div>
-    );
-  }
-
-  if (effectiveUser) {
-    return null;
+  if (!ready) {
+    return <AuthGateLoading />;
   }
 
   return <>{children}</>;
