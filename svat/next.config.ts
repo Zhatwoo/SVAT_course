@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
     "@grpc/grpc-js",
     "google-gax",
     "protobufjs",
+    "jose",
   ],
 };
 

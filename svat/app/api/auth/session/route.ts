@@ -67,11 +67,12 @@ export async function POST(request: NextRequest) {
       decoded = await verifyIdToken(body.idToken);
     } catch (error) {
       console.error("session POST verify error", error);
-      const message =
-        error instanceof Error && error.message.includes("project ID")
-          ? "Missing Firebase project ID on Vercel. Add FIREBASE_PROJECT_ID=svat-d988d and redeploy."
-          : "Could not verify login token. Redeploy with cleared build cache after adding env vars.";
-      return NextResponse.json({ error: message }, { status: 401 });
+      const detail =
+        error instanceof Error ? error.message : "Unknown verification error";
+      return NextResponse.json(
+        { error: `Could not verify login token: ${detail}` },
+        { status: 401 },
+      );
     }
 
     let role: "admin" | "student" = "student";
