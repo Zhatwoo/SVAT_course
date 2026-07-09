@@ -10,6 +10,8 @@ import {
 } from "@/lib/auth/session";
 import { verifyIdToken } from "@/lib/auth/verify-token";
 
+export const runtime = "nodejs";
+
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
@@ -19,13 +21,18 @@ const COOKIE_OPTIONS = {
 };
 
 export async function GET(request: NextRequest) {
+  const serverConfigured = isSessionSecretConfigured();
   const session = await verifySession(request.cookies.get(SESSION_COOKIE)?.value);
   if (!session) {
-    return NextResponse.json({ authenticated: false }, { status: 401 });
+    return NextResponse.json(
+      { authenticated: false, serverConfigured },
+      { status: 401 },
+    );
   }
 
   return NextResponse.json({
     authenticated: true,
+    serverConfigured,
     uid: session.uid,
     role: session.role,
   });
