@@ -35,7 +35,7 @@ function expireLegacyCookie(name: string) {
  * a freshly-issued Firebase ID token for the server to verify.
  */
 export async function syncSessionToServer(user: User) {
-  const idToken = await user.getIdToken(false);
+  const idToken = await user.getIdToken(true);
 
   const response = await fetch("/api/auth/session", {
     method: "POST",
@@ -45,7 +45,8 @@ export async function syncSessionToServer(user: User) {
   });
 
   if (!response.ok) {
-    throw new Error("Failed to establish session");
+    const data = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(data?.error ?? "Failed to establish session");
   }
 }
 
@@ -189,8 +190,12 @@ export async function signIn(
 
     try {
       await setSessionCookie(credential.user);
-    } catch {
-      // Session sync failure should not block a successful Firebase login.
+    } catch (sessionError) {
+      const message =
+        sessionError instanceof Error
+          ? sessionError.message
+          : "Failed to establish server session.";
+      throw new Error(message);
     }
 
     return credential.user;

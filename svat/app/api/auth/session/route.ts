@@ -59,7 +59,16 @@ export async function POST(request: NextRequest) {
     }
 
     const { verifyIdToken } = await import("@/lib/auth/verify-token");
-    const decoded = await verifyIdToken(body.idToken);
+    let decoded;
+    try {
+      decoded = await verifyIdToken(body.idToken);
+    } catch (error) {
+      console.error("session POST verify error", error);
+      return NextResponse.json(
+        { error: "Could not verify login token. Check Firebase env vars on Vercel." },
+        { status: 401 },
+      );
+    }
 
     let role: "admin" | "student" = "student";
     try {
@@ -69,11 +78,20 @@ export async function POST(request: NextRequest) {
       // Default to student when role lookup is unavailable.
     }
 
-    const sessionValue = await signSession({
-      uid: decoded.uid,
-      role,
-      exp: Date.now() + SESSION_MAX_AGE_SECONDS * 1000,
-    });
+    let sessionValue: string;
+    try {
+      sessionValue = await signSession({
+        uid: decoded.uid,
+        role,
+        exp: Date.now() + SESSION_MAX_AGE_SECONDS * 1000,
+      });
+    } catch (error) {
+      console.error("session POST sign error", error);
+      return NextResponse.json(
+        { error: "Could not sign session. Check SESSION_SECRET on Vercel." },
+        { status: 500 },
+      );
+    }
 
     const response = NextResponse.json({ ok: true, role });
     response.cookies.set(SESSION_COOKIE, sessionValue, COOKIE_OPTIONS);
