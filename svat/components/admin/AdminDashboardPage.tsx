@@ -4,11 +4,12 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TopNav from "@/components/layout/TopNav";
 import Footer from "@/components/layout/Footer";
-import AdminSidebar from "@/components/admin/AdminSidebar";
+import AdminSidebar, { ADMIN_NAV_LINKS } from "@/components/admin/AdminSidebar";
 import {
   createChapter,
   createCourse,
   deleteChapter,
+  deleteCourse,
   getAllChapters,
   getCourses,
   updateChapter,
@@ -426,6 +427,55 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const handleDeleteCourse = async (course: Course) => {
+    if (!firebaseReady) {
+      alert(FIREBASE_SETUP_MESSAGE);
+      return;
+    }
+
+    const courseChapterCount = chapters.filter(
+      (c) => c.courseId === course.id,
+    ).length;
+    const courseEpisodeCount = episodes.filter(
+      (e) => e.courseId === course.id,
+    ).length;
+
+    if (
+      !confirm(
+        `Delete course "${course.title}"?\n\nThis will permanently remove ${courseChapterCount} chapter(s) and ${courseEpisodeCount} episode(s). This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await deleteCourse(course.id);
+      try {
+        await logAdminActivity({
+          action: "delete",
+          entity: "course",
+          entityId: course.id,
+          details: {
+            title: course.title,
+            chaptersRemoved: courseChapterCount,
+            episodesRemoved: courseEpisodeCount,
+          },
+        });
+      } catch (logError) {
+        console.warn("Failed to write admin activity log (course delete)", logError);
+      }
+
+      if (selectedCourseId === course.id) {
+        setSelectedCourseId("");
+        setChapterId("");
+        setFilterChapter("all");
+      }
+      await loadData();
+    } catch (err) {
+      alert(getFirebaseErrorMessage(err, "Failed to delete course."));
+    }
+  };
+
   const handleAddChapter = async () => {
     if (!firebaseReady) {
       alert(FIREBASE_SETUP_MESSAGE);
@@ -619,12 +669,12 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <TopNav showNavLinks={false} />
+      <TopNav mobileNavLinks={[...ADMIN_NAV_LINKS]} showNavLinks={false} />
 
       <div className="flex min-h-[calc(100vh-64px)]">
         <AdminSidebar />
 
-        <main className="dashboard-main dashboard-main--admin mx-auto max-w-6xl flex-1 px-lg py-xl">
+        <main className="dashboard-main dashboard-main--admin mx-auto max-w-6xl flex-1 px-md py-lg md:px-lg md:py-xl">
           {!firebaseReady && (
             <div className="mb-lg rounded-xl border border-error-container bg-error-container px-lg py-md text-on-error-container">
               <div className="flex items-start gap-md">
@@ -755,27 +805,51 @@ export default function AdminDashboardPage() {
           {courses.length > 0 && (
             <section className="mb-lg rounded-xl border border-outline-variant bg-surface-container-lowest p-md dark:border-outline dark:bg-surface-container-low">
               <h3 className="font-label-md text-label-md mb-sm">Your Courses</h3>
+              <p className="mb-md font-body-sm text-body-sm text-on-surface-variant">
+                Select a course to manage it, or delete a course to remove it (and
+                all its chapters and episodes) from the student dashboard.
+              </p>
               <div className="flex flex-wrap gap-sm">
                 {courses.map((course) => {
                   const count = chapters.filter((c) => c.courseId === course.id).length;
                   const isActive = course.id === selectedCourseId;
                   return (
-                    <button
+                    <div
                       key={course.id}
-                      className={`rounded-lg border px-md py-sm font-label-md text-label-md transition-colors ${
+                      className={`flex items-center gap-xs rounded-lg border pr-xs transition-colors ${
                         isActive
                           ? "border-secondary bg-secondary text-on-secondary"
-                          : "border-outline-variant bg-surface-container-low text-on-surface-variant hover:border-secondary"
+                          : "border-outline-variant bg-surface-container-low text-on-surface-variant"
                       }`}
-                      onClick={() => {
-                        setSelectedCourseId(course.id);
-                        setFilterChapter("all");
-                      }}
-                      type="button"
                     >
-                      {course.title}
-                      <span className="ml-sm opacity-70">({count} chapters)</span>
-                    </button>
+                      <button
+                        className="rounded-lg px-md py-sm font-label-md text-label-md"
+                        onClick={() => {
+                          setSelectedCourseId(course.id);
+                          setFilterChapter("all");
+                        }}
+                        type="button"
+                      >
+                        {course.title}
+                        <span className="ml-sm opacity-70">({count} chapters)</span>
+                      </button>
+                      <button
+                        aria-label={`Delete course ${course.title}`}
+                        className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                          isActive
+                            ? "text-on-secondary hover:bg-white/20"
+                            : "text-error hover:bg-error-container"
+                        }`}
+                        disabled={!firebaseReady}
+                        onClick={() => handleDeleteCourse(course)}
+                        title="Delete course"
+                        type="button"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          delete
+                        </span>
+                      </button>
+                    </div>
                   );
                 })}
               </div>

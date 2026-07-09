@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const LINKS = [
+export const ADMIN_NAV_LINKS = [
   { label: "Curriculum", href: "/admin", icon: "quiz" },
   { label: "Generate Codes", href: "/admin/codes", icon: "vpn_key" },
   { label: "Users & Leaks", href: "/admin/users", icon: "manage_accounts" },
   { label: "Register Admin", href: "/admin/register", icon: "admin_panel_settings" },
 ] as const;
+
+const LINKS = ADMIN_NAV_LINKS;
 
 export default function AdminSidebar() {
   const pathname = usePathname();

@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import TopNav from "@/components/layout/TopNav";
 import Footer from "@/components/layout/Footer";
-import AdminSidebar from "@/components/admin/AdminSidebar";
+import AdminSidebar, { ADMIN_NAV_LINKS } from "@/components/admin/AdminSidebar";
 import { isFirebaseConfigured } from "@/lib/firebase/client";
 import { getFirebaseErrorMessage } from "@/lib/firebase/errors";
 import { logAdminActivity } from "@/lib/firestore/activityLogs";
 import {
   createAccessCode,
   createAccessCodeBatch,
+  deleteAccessCode,
   listAccessCodes,
   revokeAccessCode,
 } from "@/lib/firestore/accessCodes";
@@ -158,6 +159,29 @@ export default function AdminAccessCodesPage() {
     }
   };
 
+  const handleDelete = async (code: AccessCode) => {
+    if (!firebaseReady) return;
+    if (
+      !confirm(
+        `Permanently DELETE code ${code.code}?\n\nThis removes it from the list for good. This cannot be undone.`,
+      )
+    )
+      return;
+
+    try {
+      await deleteAccessCode(code.code);
+      await logAdminActivity({
+        action: "delete",
+        entity: "access_code",
+        entityId: code.code,
+        details: { previousStatus: code.status },
+      });
+      await loadData();
+    } catch (err) {
+      alert(getFirebaseErrorMessage(err, "Failed to delete access code."));
+    }
+  };
+
   const handleCopy = async (code: string) => {
     try {
       await navigator.clipboard.writeText(code);
@@ -178,12 +202,12 @@ export default function AdminAccessCodesPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <TopNav showNavLinks={false} />
+      <TopNav mobileNavLinks={[...ADMIN_NAV_LINKS]} showNavLinks={false} />
 
       <div className="flex min-h-[calc(100vh-64px)]">
         <AdminSidebar />
 
-        <main className="dashboard-main dashboard-main--admin mx-auto max-w-6xl flex-1 px-lg py-xl">
+        <main className="dashboard-main dashboard-main--admin mx-auto max-w-6xl flex-1 px-md py-lg md:px-lg md:py-xl">
           {loadError && (
             <div className="mb-lg rounded-xl border border-error-container bg-error-container px-lg py-md text-on-error-container">
               <p className="font-body-sm text-body-sm">{loadError}</p>
@@ -423,6 +447,13 @@ export default function AdminAccessCodesPage() {
                                 Revoke
                               </button>
                             )}
+                            <button
+                              className="rounded-lg border border-error bg-error/10 px-sm py-xs font-label-sm text-label-sm text-error hover:bg-error hover:text-white"
+                              onClick={() => void handleDelete(code)}
+                              type="button"
+                            >
+                              Delete
+                            </button>
                           </div>
                         </td>
                       </tr>

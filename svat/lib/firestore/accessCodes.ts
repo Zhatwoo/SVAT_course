@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -487,4 +488,10 @@ export async function revokeAccessCode(code: string): Promise<void> {
   await updateDoc(codeRef, {
     status: "revoked" satisfies AccessCodeStatus,
   });
+}
+
+/** Permanently delete an access code document. Works for any status. */
+export async function deleteAccessCode(code: string): Promise<void> {
+  const normalized = normalizeAccessCode(code);
+  await deleteDoc(doc(getClientDb(), COLLECTION, normalized));
 }

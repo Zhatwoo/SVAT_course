@@ -241,7 +241,7 @@ export default function CoursePage() {
   }
 
   return (
-    <div className="tv-course-shell flex h-screen flex-col overflow-hidden font-body-md text-foreground transition-colors duration-300">
+    <div className="tv-course-shell flex min-h-screen flex-col font-body-md text-foreground transition-colors duration-300 md:h-screen md:overflow-hidden">
       <TopNav
         links={[
           { label: "Dashboard", href: "/user" },
@@ -256,8 +256,8 @@ export default function CoursePage() {
         showProgress
       />
 
-      <main className="flex flex-1 overflow-hidden">
-        <aside className="custom-scrollbar tv-panel m-md mr-0 flex h-[calc(100%-16px)] w-[320px] flex-col overflow-y-auto">
+      <main className="flex flex-1 flex-col md:flex-row md:overflow-hidden">
+        <aside className="custom-scrollbar tv-panel order-2 m-md flex max-h-[70vh] w-auto flex-col overflow-y-auto md:order-1 md:mr-0 md:h-[calc(100%-16px)] md:max-h-none md:w-[320px]">
           <div className="tv-header p-md">
             <div className="mb-base flex items-center gap-sm">
               <span className="material-symbols-outlined text-secondary dark:text-secondary-fixed">
@@ -296,7 +296,7 @@ export default function CoursePage() {
           </div>
         </aside>
 
-        <section className="custom-scrollbar flex-1 overflow-y-auto p-lg">
+        <section className="custom-scrollbar order-1 flex-1 p-md md:order-2 md:overflow-y-auto md:p-lg">
           <div className="mx-auto max-w-[1000px] space-y-lg">
             {error && (
               <div className="rounded-lg border border-error-container bg-error-container px-lg py-md text-on-error-container">

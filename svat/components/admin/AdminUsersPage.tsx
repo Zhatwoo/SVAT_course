@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import TopNav from "@/components/layout/TopNav";
 import Footer from "@/components/layout/Footer";
-import AdminSidebar from "@/components/admin/AdminSidebar";
+import AdminSidebar, { ADMIN_NAV_LINKS } from "@/components/admin/AdminSidebar";
 import { isFirebaseConfigured } from "@/lib/firebase/client";
 import { getFirebaseErrorMessage } from "@/lib/firebase/errors";
 import { logAdminActivity } from "@/lib/firestore/activityLogs";
@@ -127,12 +127,12 @@ export default function AdminUsersPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-        <TopNav showNavLinks={false} />
+        <TopNav mobileNavLinks={[...ADMIN_NAV_LINKS]} showNavLinks={false} />
 
         <div className="flex min-h-[calc(100vh-64px)]">
           <AdminSidebar />
 
-          <main className="dashboard-main dashboard-main--admin mx-auto max-w-6xl flex-1 px-lg py-xl">
+          <main className="dashboard-main dashboard-main--admin mx-auto max-w-6xl flex-1 px-md py-lg md:px-lg md:py-xl">
             {loadError && (
               <div className="mb-lg rounded-xl border border-error-container bg-error-container px-lg py-md text-on-error-container">
                 <p className="font-body-sm text-body-sm">{loadError}</p>

@@ -10,6 +10,7 @@ import {
   updateDoc,
   deleteDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { getClientDb } from "../firebase/client";
 import type { Chapter, Course, CourseCategory } from "../types";
@@ -45,6 +46,33 @@ export async function createCourse(data: {
     createdAt: serverTimestamp(),
   });
   return ref.id;
+}
+
+/**
+ * Permanently deletes a course together with all of its chapters and
+ * episodes. Firestore has no cascade delete, so we remove children first.
+ */
+export async function deleteCourse(courseId: string): Promise<void> {
+  const db = getClientDb();
+
+  const [episodeSnap, chapterSnap] = await Promise.all([
+    getDocs(query(collection(db, "episodes"), where("courseId", "==", courseId))),
+    getDocs(query(collection(db, "chapters"), where("courseId", "==", courseId))),
+  ]);
+
+  const childDocs = [...episodeSnap.docs, ...chapterSnap.docs];
+
+  // A batch is limited to 500 writes; chunk to stay safe on large courses.
+  const CHUNK_SIZE = 450;
+  for (let i = 0; i < childDocs.length; i += CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    for (const child of childDocs.slice(i, i + CHUNK_SIZE)) {
+      batch.delete(child.ref);
+    }
+    await batch.commit();
+  }
+
+  await deleteDoc(doc(db, "courses", courseId));
 }
 
 export async function getChaptersByCourse(courseId: string): Promise<Chapter[]> {
