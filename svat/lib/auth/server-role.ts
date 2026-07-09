@@ -1,6 +1,6 @@
 import "server-only";
 
-import { isFirebaseAdminConfigured, getAdminDb } from "@/lib/firebase/admin";
+import { isFirebaseAdminConfigured } from "@/lib/firebase/admin-config";
 import type { UserRole } from "@/lib/types";
 
 const ROLE_COLLECTION = "role";
@@ -130,7 +130,8 @@ async function resolveRoleViaRest(
   email: string | null | undefined,
   idToken: string,
 ): Promise<UserRole> {
-  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  const projectId =
+    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID;
   if (!projectId) {
     return "student";
   }
@@ -151,27 +152,39 @@ async function resolveRoleViaRest(
   );
 }
 
+async function resolveRoleViaAdminSdk(
+  uid: string,
+  email?: string | null,
+): Promise<UserRole> {
+  const { getAdminDb } = await import("@/lib/firebase/admin");
+  const db = getAdminDb();
+  const [adminSnap, legacyUserSnap, userSnap] = await Promise.all([
+    db.collection(ROLE_COLLECTION).doc(ADMIN_DOC).get(),
+    db.collection(ROLE_COLLECTION).doc(LEGACY_USER_DOC).get(),
+    db.collection(USERS_COLLECTION).doc(uid).get(),
+  ]);
+
+  return resolveRoleFromDocs(
+    uid,
+    email,
+    adminSnap.data(),
+    legacyUserSnap.data(),
+    userSnap.data(),
+    userSnap.exists,
+  );
+}
+
 export async function resolveServerUserRole(
   uid: string,
   email?: string | null,
   idToken?: string,
 ): Promise<UserRole> {
   if (isFirebaseAdminConfigured()) {
-    const db = getAdminDb();
-    const [adminSnap, legacyUserSnap, userSnap] = await Promise.all([
-      db.collection(ROLE_COLLECTION).doc(ADMIN_DOC).get(),
-      db.collection(ROLE_COLLECTION).doc(LEGACY_USER_DOC).get(),
-      db.collection(USERS_COLLECTION).doc(uid).get(),
-    ]);
-
-    return resolveRoleFromDocs(
-      uid,
-      email,
-      adminSnap.data(),
-      legacyUserSnap.data(),
-      userSnap.data(),
-      userSnap.exists,
-    );
+    try {
+      return await resolveRoleViaAdminSdk(uid, email);
+    } catch {
+      // Fall through to REST when Admin SDK cannot load on the host.
+    }
   }
 
   if (idToken) {

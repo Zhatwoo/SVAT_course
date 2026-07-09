@@ -98,18 +98,5 @@ async function verifyIdTokenViaJwt(idToken: string): Promise<VerifiedToken> {
 }
 
 export async function verifyIdToken(idToken: string): Promise<VerifiedToken> {
-  const { isFirebaseAdminConfigured, getAdminAuth } = await import("@/lib/firebase/admin");
-  if (isFirebaseAdminConfigured()) {
-    try {
-      const decoded = await getAdminAuth().verifyIdToken(idToken);
-      return {
-        uid: decoded.uid,
-        email: decoded.email ?? null,
-      };
-    } catch {
-      // Misconfigured Admin SDK on the host should not block login.
-    }
-  }
-
   return verifyIdTokenViaJwt(idToken);
 }
