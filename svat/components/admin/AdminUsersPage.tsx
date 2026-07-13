@@ -150,7 +150,126 @@ export default function AdminUsersPage() {
 
             <section className="mb-lg rounded-xl border border-outline-variant bg-surface-container-lowest p-md dark:border-outline dark:bg-surface-container-low">
               <h3 className="mb-sm font-label-md text-label-md">User Management</h3>
-              <div className="overflow-x-auto">
+
+              {/* Mobile: stacked cards */}
+              <div className="space-y-md md:hidden">
+                {users.length === 0 ? (
+                  <p className="rounded-lg border border-outline-variant/60 px-md py-lg text-center font-body-sm text-body-sm text-outline">
+                    No users yet.
+                  </p>
+                ) : (
+                  users.map((userRecord) => {
+                    const isEditing = editingUserId === userRecord.uid;
+                    return (
+                      <div
+                        key={userRecord.uid}
+                        className="rounded-xl border border-outline-variant/60 bg-surface-container-low p-md"
+                      >
+                        <div className="flex items-start justify-between gap-sm">
+                          <div className="min-w-0">
+                            {isEditing ? (
+                              <input
+                                className="w-full rounded border border-outline-variant bg-surface px-sm py-1 text-body-sm"
+                                onChange={(e) => setEditDisplayName(e.target.value)}
+                                value={editDisplayName}
+                              />
+                            ) : (
+                              <p className="font-label-md text-label-md">
+                                {userRecord.displayName}
+                              </p>
+                            )}
+                            <p className="break-all text-xs text-on-surface-variant">
+                              {userRecord.email}
+                            </p>
+                          </div>
+                          <span
+                            className={`shrink-0 rounded px-sm py-0.5 text-xs ${
+                              userRecord.isBlocked
+                                ? "bg-error-container text-on-error-container"
+                                : "bg-tertiary-fixed text-on-tertiary-fixed-variant"
+                            }`}
+                          >
+                            {userRecord.isBlocked ? "Blocked" : "Active"}
+                          </span>
+                        </div>
+
+                        <dl className="mt-sm grid grid-cols-[auto_1fr] gap-x-md gap-y-xs font-body-sm text-body-sm">
+                          <dt className="text-outline">Role</dt>
+                          <dd className="text-on-surface-variant">
+                            {isEditing ? (
+                              <select
+                                className="rounded border border-outline-variant bg-surface px-sm py-1 text-body-sm"
+                                onChange={(e) => setEditRole(e.target.value as UserRole)}
+                                value={editRole}
+                              >
+                                <option value="student">student</option>
+                                <option value="admin">admin</option>
+                              </select>
+                            ) : (
+                              <span className="capitalize">{userRecord.role}</span>
+                            )}
+                          </dd>
+                          <dt className="text-outline">Access Code</dt>
+                          <dd className="break-all text-on-surface-variant">
+                            {userRecord.accessCodeUsed || "—"}
+                          </dd>
+                        </dl>
+
+                        <div className="mt-md flex flex-wrap gap-sm">
+                          {isEditing ? (
+                            <>
+                              <input
+                                className="w-full rounded border border-outline-variant bg-surface px-sm py-1 text-body-sm"
+                                onChange={(e) => setBlockReasonInput(e.target.value)}
+                                placeholder="Block reason (optional)"
+                                value={blockReasonInput}
+                              />
+                              <button
+                                className="rounded bg-secondary px-md py-1 text-xs text-on-secondary"
+                                onClick={() => void handleSaveUser(userRecord.uid)}
+                                type="button"
+                              >
+                                Save
+                              </button>
+                              <button
+                                className="rounded border border-outline-variant px-md py-1 text-xs"
+                                onClick={() => setEditingUserId(null)}
+                                type="button"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                className="rounded border border-outline-variant px-md py-1 text-xs"
+                                onClick={() => startEditUser(userRecord)}
+                                type="button"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className={`rounded px-md py-1 text-xs ${
+                                  userRecord.isBlocked
+                                    ? "bg-tertiary-container text-on-tertiary-container"
+                                    : "bg-error text-on-error"
+                                }`}
+                                onClick={() => void handleToggleBlockUser(userRecord)}
+                                type="button"
+                              >
+                                {userRecord.isBlocked ? "Unblock" : "Block"}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Desktop: full table */}
+              <div className="hidden overflow-x-auto md:block">
                 <table className="w-full border-collapse text-left">
                   <thead>
                     <tr className="border-b border-outline-variant bg-surface-container-low">
