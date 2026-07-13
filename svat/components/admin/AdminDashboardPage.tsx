@@ -1257,7 +1257,7 @@ export default function AdminDashboardPage() {
                             </span>
                           </td>
                           <td className="px-lg py-md text-right">
-                            <div className="flex justify-end gap-md opacity-0 transition-opacity group-hover:opacity-100">
+                            <div className="flex justify-end gap-md opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
                               <button
                                 className="font-label-sm text-label-sm text-secondary hover:underline disabled:cursor-not-allowed disabled:opacity-40"
                                 disabled={!firebaseReady}

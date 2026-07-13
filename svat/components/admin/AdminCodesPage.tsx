@@ -355,7 +355,7 @@ export default function AdminAccessCodesPage() {
           <section className="rounded-xl border border-outline-variant bg-surface-container-lowest p-lg">
             <div className="mb-md flex flex-wrap items-center justify-between gap-md">
               <h2 className="font-headline-sm text-headline-sm text-on-surface">All Codes</h2>
-              <div className="flex gap-sm">
+              <div className="flex flex-wrap gap-sm">
                 {(["all", "active", "used", "revoked"] as const).map((item) => (
                   <button
                     key={item}
@@ -373,7 +373,82 @@ export default function AdminAccessCodesPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Mobile: stacked cards */}
+            <div className="space-y-md md:hidden">
+              {filteredCodes.length === 0 ? (
+                <p className="rounded-lg border border-outline-variant/60 px-md py-lg text-center font-body-sm text-body-sm text-outline">
+                  No access codes yet. Generate one above.
+                </p>
+              ) : (
+                filteredCodes.map((code) => (
+                  <div
+                    key={code.id}
+                    className="rounded-xl border border-outline-variant/60 bg-surface-container-low p-md"
+                  >
+                    <div className="flex items-start justify-between gap-sm">
+                      <span className="break-all font-label-md text-label-md text-on-surface">
+                        {code.code}
+                      </span>
+                      <span
+                        className={`shrink-0 rounded-full px-sm py-xs font-label-sm text-label-sm capitalize ${statusBadge(code.status)}`}
+                      >
+                        {code.status}
+                      </span>
+                    </div>
+
+                    <dl className="mt-sm grid grid-cols-[auto_1fr] gap-x-md gap-y-xs font-body-sm text-body-sm">
+                      <dt className="text-outline">Assigned</dt>
+                      <dd className="break-all text-on-surface-variant">
+                        {code.assignedToEmail || "Any"}
+                      </dd>
+                      <dt className="text-outline">Bound to</dt>
+                      <dd className="break-all text-on-surface-variant">
+                        {code.usedByEmail
+                          ? `${code.usedByDisplayName || "Student"} · ${code.usedByEmail}`
+                          : "—"}
+                      </dd>
+                      <dt className="text-outline">Note</dt>
+                      <dd className="break-words text-on-surface-variant">
+                        {code.note || "—"}
+                      </dd>
+                      <dt className="text-outline">Created</dt>
+                      <dd className="text-on-surface-variant">{formatDate(code.createdAt)}</dd>
+                      <dt className="text-outline">Used</dt>
+                      <dd className="text-on-surface-variant">{formatDate(code.usedAt)}</dd>
+                    </dl>
+
+                    <div className="mt-md flex flex-wrap gap-sm">
+                      <button
+                        className="rounded-lg border border-outline-variant px-md py-xs font-label-sm text-label-sm text-secondary hover:bg-surface-container"
+                        onClick={() => void handleCopy(code.code)}
+                        type="button"
+                      >
+                        {copiedCode === code.code ? "Copied" : "Copy"}
+                      </button>
+                      {code.status === "active" && (
+                        <button
+                          className="rounded-lg border border-error px-md py-xs font-label-sm text-label-sm text-error hover:bg-error-container"
+                          onClick={() => void handleRevoke(code)}
+                          type="button"
+                        >
+                          Revoke
+                        </button>
+                      )}
+                      <button
+                        className="rounded-lg border border-error bg-error/10 px-md py-xs font-label-sm text-label-sm text-error hover:bg-error hover:text-white"
+                        onClick={() => void handleDelete(code)}
+                        type="button"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Desktop: full table */}
+            <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-left">
                 <thead>
                   <tr className="border-b border-outline-variant font-label-sm text-label-sm text-outline">
