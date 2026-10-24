@@ -514,13 +514,50 @@ textarea::placeholder {
   background: #000;
 }
 
-.video-player-root:fullscreen video,
-.video-player-root:-webkit-full-screen video,
-.video-player-root:fullscreen > div:first-of-type,
-.video-player-root:-webkit-full-screen > div:first-of-type {
+.video-player-root:fullscreen .video-player-media,
+.video-player-root:-webkit-full-screen .video-player-media {
+  position: absolute;
+  inset: 0;
+  bottom: 4.75rem;
+}
+
+.video-player-root:fullscreen .video-player-media video,
+.video-player-root:-webkit-full-screen .video-player-media video,
+.video-player-root:fullscreen .video-player-media > div,
+.video-player-root:-webkit-full-screen .video-player-media > div {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+/* Mobile / iOS: pseudo-fullscreen (Fullscreen API often unavailable on div/iframe). */
+.video-player-root--viewport-fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 9999 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  max-height: none !important;
+  background: #000 !important;
+}
+
+.video-player-root--viewport-fullscreen .video-player-media {
+  position: absolute;
+  inset: 0;
+  bottom: 4.75rem;
+}
+
+.video-player-root--viewport-fullscreen .video-player-media video,
+.video-player-root--viewport-fullscreen .video-player-media > div {
+  height: 100% !important;
+  width: 100% !important;
+}
+
+.video-player-root--viewport-fullscreen .video-player-controls {
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  left: max(1rem, env(safe-area-inset-left, 0px));
+  right: max(1rem, env(safe-area-inset-right, 0px));
 }
 
 .dark .tv-video-frame {
