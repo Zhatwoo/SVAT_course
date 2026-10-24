@@ -74,6 +74,19 @@ function loadYouTubeAPI(): Promise<void> {
   return apiReadyPromise;
 }
 
+function isMobileViewport(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(max-width: 768px)").matches;
+}
+
+function isIOSDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
 export default function VideoPlayer({
   videoId,
   secureUrl,
@@ -93,6 +106,8 @@ export default function VideoPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [captureBlocked, setCaptureBlocked] = useState(false);
+  const [isViewportFullscreen, setIsViewportFullscreen] = useState(false);
+  const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
   const captureTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playerRootRef = useRef<HTMLDivElement>(null);
   const isPlayingRef = useRef(false);
@@ -261,17 +276,30 @@ export default function VideoPlayer({
     }
   }, [secureUrl]);
 
-  const handleFullscreen = useCallback(() => {
-    const root = playerRootRef.current;
-    if (!root) return;
-
+  const exitAllFullscreen = useCallback(async () => {
+    setIsViewportFullscreen(false);
     if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => {});
+      await document.exitFullscreen().catch(() => {});
+    }
+  }, []);
+
+  const enterViewportFullscreen = useCallback(() => {
+    setIsViewportFullscreen(true);
+  }, []);
+
+  const handleFullscreen = useCallback(async () => {
+    if (isViewportFullscreen || document.fullscreenElement) {
+      await exitAllFullscreen();
       return;
     }
 
-    // iOS Safari: native <video> fullscreen API (div.requestFullscreen often unsupported).
-    if (secureUrl && nativeVideoRef.current) {
+    const root = playerRootRef.current;
+    if (!root) return;
+
+    const mobile = isMobileViewport();
+
+    // iOS uploaded video: use the system video fullscreen when available.
+    if (secureUrl && nativeVideoRef.current && isIOSDevice()) {
       const video = nativeVideoRef.current as HTMLVideoElement & {
         webkitEnterFullscreen?: () => void;
       };
@@ -281,13 +309,56 @@ export default function VideoPlayer({
       }
     }
 
-    const el = root as HTMLElement & {
-      webkitRequestFullscreen?: () => Promise<void>;
+    // Desktop / Android: try the Fullscreen API on the player shell first.
+    if (!mobile) {
+      const el = root as HTMLElement & {
+        webkitRequestFullscreen?: () => Promise<void>;
+      };
+      const request =
+        el.requestFullscreen?.bind(el) ?? el.webkitRequestFullscreen?.bind(el);
+      try {
+        await request?.();
+        if (document.fullscreenElement) return;
+      } catch {
+        /* fall through */
+      }
+
+      const iframe = containerRef.current?.querySelector("iframe");
+      if (iframe?.requestFullscreen) {
+        try {
+          await iframe.requestFullscreen();
+          return;
+        } catch {
+          /* fall through */
+        }
+      }
+    }
+
+    // Mobile (especially YouTube on iOS): lock the player to the viewport.
+    enterViewportFullscreen();
+  }, [
+    secureUrl,
+    isViewportFullscreen,
+    exitAllFullscreen,
+    enterViewportFullscreen,
+  ]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsNativeFullscreen(Boolean(document.fullscreenElement));
     };
-    const request =
-      el.requestFullscreen?.bind(el) ?? el.webkitRequestFullscreen?.bind(el);
-    void request?.().catch(() => {});
-  }, [secureUrl]);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    if (!isViewportFullscreen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isViewportFullscreen]);
 
   const blockEvent = useCallback((event: React.SyntheticEvent) => {
     event.preventDefault();
@@ -469,10 +540,14 @@ export default function VideoPlayer({
     setCurrentTime(nextTime);
   }, [secureUrl]);
 
+  const isFullscreenActive = isViewportFullscreen || isNativeFullscreen;
+
   return (
     <div
       ref={playerRootRef}
-      className="video-player-root relative h-full w-full select-none outline-none"
+      className={`video-player-root relative h-full w-full select-none outline-none ${
+        isViewportFullscreen ? "video-player-root--viewport-fullscreen" : ""
+      }`}
       onContextMenu={blockEvent}
       onCopy={blockEvent}
       onCut={blockEvent}
@@ -480,28 +555,30 @@ export default function VideoPlayer({
       onKeyDownCapture={handleKeyDownCapture}
       tabIndex={-1}
     >
-      {secureUrl ? (
-        <video
-          ref={nativeVideoRef}
-          className="h-full w-full object-contain"
-          controls={false}
-          controlsList="nodownload noplaybackrate noremoteplayback"
-          disablePictureInPicture
-          onEnded={handleComplete}
-          onLoadedMetadata={(event) => {
-            setDuration(event.currentTarget.duration || 0);
-          }}
-          onPause={() => setIsPlaying(false)}
-          onPlay={() => {
-            setIsPlaying(true);
-            playerRootRef.current?.focus({ preventScroll: true });
-          }}
-          playsInline
-          src={secureUrl}
-        />
-      ) : (
-        <div ref={containerRef} className="h-full w-full" />
-      )}
+      <div className="video-player-media h-full w-full">
+        {secureUrl ? (
+          <video
+            ref={nativeVideoRef}
+            className="h-full w-full object-contain"
+            controls={false}
+            controlsList="nodownload noplaybackrate noremoteplayback"
+            disablePictureInPicture
+            onEnded={handleComplete}
+            onLoadedMetadata={(event) => {
+              setDuration(event.currentTarget.duration || 0);
+            }}
+            onPause={() => setIsPlaying(false)}
+            onPlay={() => {
+              setIsPlaying(true);
+              playerRootRef.current?.focus({ preventScroll: true });
+            }}
+            playsInline
+            src={secureUrl}
+          />
+        ) : (
+          <div ref={containerRef} className="h-full w-full [&>iframe]:h-full [&>iframe]:w-full" />
+        )}
+      </div>
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 z-[6] flex items-center justify-center overflow-hidden"
@@ -522,7 +599,7 @@ export default function VideoPlayer({
         </div>
       )}
       <div className="absolute inset-0 z-[5]" aria-hidden="true" />
-      <div className="absolute inset-x-4 bottom-4 z-10 flex items-center gap-3 rounded-lg bg-black/60 px-3 py-2 text-white backdrop-blur-sm">
+      <div className="video-player-controls absolute inset-x-4 bottom-4 z-10 flex items-center gap-3 rounded-lg bg-black/60 px-3 py-2 text-white backdrop-blur-sm">
         <span className="w-20 text-xs tabular-nums">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
@@ -552,7 +629,9 @@ export default function VideoPlayer({
           onClick={handleFullscreen}
           type="button"
         >
-          <span className="material-symbols-outlined text-[20px]">fullscreen</span>
+          <span className="material-symbols-outlined text-[20px]">
+            {isFullscreenActive ? "fullscreen_exit" : "fullscreen"}
+          </span>
         </button>
       </div>
     </div>
