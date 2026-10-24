@@ -262,16 +262,32 @@ export default function VideoPlayer({
   }, [secureUrl]);
 
   const handleFullscreen = useCallback(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    const root = playerRootRef.current;
+    if (!root) return;
 
     if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
+      void document.exitFullscreen().catch(() => {});
       return;
     }
 
-    container.requestFullscreen?.().catch(() => {});
-  }, []);
+    // iOS Safari: native <video> fullscreen API (div.requestFullscreen often unsupported).
+    if (secureUrl && nativeVideoRef.current) {
+      const video = nativeVideoRef.current as HTMLVideoElement & {
+        webkitEnterFullscreen?: () => void;
+      };
+      if (typeof video.webkitEnterFullscreen === "function") {
+        video.webkitEnterFullscreen();
+        return;
+      }
+    }
+
+    const el = root as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void>;
+    };
+    const request =
+      el.requestFullscreen?.bind(el) ?? el.webkitRequestFullscreen?.bind(el);
+    void request?.().catch(() => {});
+  }, [secureUrl]);
 
   const blockEvent = useCallback((event: React.SyntheticEvent) => {
     event.preventDefault();
@@ -456,7 +472,7 @@ export default function VideoPlayer({
   return (
     <div
       ref={playerRootRef}
-      className="relative h-full w-full select-none outline-none"
+      className="video-player-root relative h-full w-full select-none outline-none"
       onContextMenu={blockEvent}
       onCopy={blockEvent}
       onCut={blockEvent}
@@ -467,7 +483,7 @@ export default function VideoPlayer({
       {secureUrl ? (
         <video
           ref={nativeVideoRef}
-          className="h-full w-full"
+          className="h-full w-full object-contain"
           controls={false}
           controlsList="nodownload noplaybackrate noremoteplayback"
           disablePictureInPicture
