@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { FirebaseError } from "firebase/app";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   computeEpisodeStatuses,
@@ -8,11 +9,15 @@ import {
   subscribeUserProgress,
 } from "@/lib/firestore/progress";
 import { getEpisodesByCourse } from "@/lib/firestore/episodes";
-import { getCourseById, getCourses } from "@/lib/firestore/courses";
+import {
+  canUserViewCourse,
+  getCourseById,
+  getVisibleCourses,
+} from "@/lib/firestore/courses";
 import type { Course, Episode, UserProgress } from "@/lib/types";
 
 export function useCourseData(courseId?: string) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [course, setCourse] = useState<Course | null>(null);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [progress, setProgress] = useState<UserProgress[]>([]);
@@ -27,9 +32,15 @@ export function useCourseData(courseId?: string) {
       setLoading(true);
       setError(null);
       try {
+        const isAdmin = profile?.role === "admin";
+        const viewerEmail = user?.email ?? profile?.email;
         let targetCourseId = courseId ?? null;
+
         if (!targetCourseId) {
-          const courses = await getCourses();
+          const courses = await getVisibleCourses({
+            email: viewerEmail,
+            isAdmin,
+          });
           const published = courses.filter((c) => c.isPublished);
           targetCourseId = published[0]?.id ?? null;
         }
@@ -46,16 +57,31 @@ export function useCourseData(courseId?: string) {
           getCourseById(targetCourseId),
           getEpisodesByCourse(targetCourseId),
         ]);
+
+        if (
+          courseData &&
+          !canUserViewCourse(courseData, viewerEmail, isAdmin)
+        ) {
+          setCourse(null);
+          setEpisodes([]);
+          setError("Wala kang access sa course na ito.");
+          return;
+        }
+
         setCourse(courseData);
         setEpisodes(eps);
-      } catch {
-        setError("Failed to load course. Please try again.");
+      } catch (err) {
+        if (err instanceof FirebaseError && err.code === "permission-denied") {
+          setError("Wala kang access sa course na ito.");
+        } else {
+          setError("Failed to load course. Please try again.");
+        }
       } finally {
         setLoading(false);
       }
     }
-    load();
-  }, [courseId]);
+    void load();
+  }, [courseId, user?.email, profile?.email, profile?.role]);
 
   useEffect(() => {
     if (!user) {

@@ -83,6 +83,10 @@ export interface Course {
   thumbnailUrl?: string;
   order: number;
   isPublished: boolean;
+  /** When true, only admins + emails in allowedEmails can see the course. */
+  isPrivate?: boolean;
+  /** Lowercase emails allowed to view a private course. */
+  allowedEmails?: string[];
 }
 
 export interface Chapter {

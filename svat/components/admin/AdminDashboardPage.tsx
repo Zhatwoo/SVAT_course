@@ -6,12 +6,16 @@ import TopNav from "@/components/layout/TopNav";
 import Footer from "@/components/layout/Footer";
 import AdminSidebar, { ADMIN_NAV_LINKS } from "@/components/admin/AdminSidebar";
 import {
+  addCourseAllowedEmail,
   createChapter,
   createCourse,
   deleteChapter,
   deleteCourse,
+  ensureCourseVisibilityDefaults,
   getAllChapters,
   getCourses,
+  removeCourseAllowedEmail,
+  setCoursePrivate,
   updateChapter,
   updateCourse,
 } from "@/lib/firestore/courses";
@@ -91,6 +95,10 @@ export default function AdminDashboardPage() {
   const [chapterEditOrder, setChapterEditOrder] = useState("");
   const [chapterActionError, setChapterActionError] = useState("");
 
+  const [permissionEmailInput, setPermissionEmailInput] = useState("");
+  const [permissionError, setPermissionError] = useState("");
+  const [savingPermissions, setSavingPermissions] = useState(false);
+
   const episodeFormRef = useRef<HTMLElement>(null);
 
   const firebaseReady = isFirebaseConfigured();
@@ -129,7 +137,12 @@ export default function AdminDashboardPage() {
         dataPromise,
         timeoutPromise,
       ]);
-      setCourses(courseData);
+      await ensureCourseVisibilityDefaults(courseData);
+      const refreshedCourses =
+        courseData.some((c) => c.isPrivate === undefined)
+          ? await getCourses()
+          : courseData;
+      setCourses(refreshedCourses);
       setChapters(chapterData);
       setEpisodes(episodeData);
       const discord = settings.communityDiscordUrl ?? "";
@@ -473,6 +486,81 @@ export default function AdminDashboardPage() {
       await loadData();
     } catch (err) {
       alert(getFirebaseErrorMessage(err, "Failed to delete course."));
+    }
+  };
+
+  const handleToggleCoursePrivate = async (course: Course, nextPrivate: boolean) => {
+    if (!firebaseReady) {
+      alert(FIREBASE_SETUP_MESSAGE);
+      return;
+    }
+    setSavingPermissions(true);
+    setPermissionError("");
+    try {
+      await setCoursePrivate(course.id, nextPrivate);
+      try {
+        await logAdminActivity({
+          action: "update",
+          entity: "course",
+          entityId: course.id,
+          details: { type: "visibility", isPrivate: nextPrivate },
+        });
+      } catch {}
+      await loadData();
+    } catch (err) {
+      setPermissionError(getFirebaseErrorMessage(err, "Failed to update course privacy."));
+    } finally {
+      setSavingPermissions(false);
+    }
+  };
+
+  const handleAddAllowedEmail = async () => {
+    if (!firebaseReady || !selectedCourseId) return;
+    setSavingPermissions(true);
+    setPermissionError("");
+    try {
+      const added = await addCourseAllowedEmail(selectedCourseId, permissionEmailInput);
+      try {
+        await logAdminActivity({
+          action: "update",
+          entity: "course",
+          entityId: selectedCourseId,
+          details: { type: "permission_add", email: added },
+        });
+      } catch {}
+      setPermissionEmailInput("");
+      await loadData();
+    } catch (err) {
+      setPermissionError(
+        getFirebaseErrorMessage(err, "Failed to add email permission."),
+      );
+    } finally {
+      setSavingPermissions(false);
+    }
+  };
+
+  const handleRemoveAllowedEmail = async (email: string) => {
+    if (!firebaseReady || !selectedCourseId) return;
+    if (!confirm(`Remove access for ${email}?`)) return;
+    setSavingPermissions(true);
+    setPermissionError("");
+    try {
+      await removeCourseAllowedEmail(selectedCourseId, email);
+      try {
+        await logAdminActivity({
+          action: "update",
+          entity: "course",
+          entityId: selectedCourseId,
+          details: { type: "permission_remove", email },
+        });
+      } catch {}
+      await loadData();
+    } catch (err) {
+      setPermissionError(
+        getFirebaseErrorMessage(err, "Failed to remove email permission."),
+      );
+    } finally {
+      setSavingPermissions(false);
     }
   };
 
@@ -827,9 +915,15 @@ export default function AdminDashboardPage() {
                         onClick={() => {
                           setSelectedCourseId(course.id);
                           setFilterChapter("all");
+                          setPermissionError("");
                         }}
                         type="button"
                       >
+                        {course.isPrivate && (
+                          <span className="material-symbols-outlined mr-1 align-middle text-[16px]">
+                            lock
+                          </span>
+                        )}
                         {course.title}
                         <span className="ml-sm opacity-70">({count} chapters)</span>
                       </button>
@@ -853,6 +947,110 @@ export default function AdminDashboardPage() {
                   );
                 })}
               </div>
+            </section>
+          )}
+
+          {selectedCourse && (
+            <section className="mb-lg rounded-xl border border-outline-variant bg-surface-container-lowest p-md dark:border-outline dark:bg-surface-container-low">
+              <div className="mb-md flex flex-wrap items-start justify-between gap-md">
+                <div>
+                  <h3 className="font-label-md text-label-md">
+                    Course Access — {selectedCourse.title}
+                  </h3>
+                  <p className="mt-xs font-body-sm text-body-sm text-on-surface-variant">
+                    Private courses are hidden from all students except the emails
+                    you allow below. Admins always see every course.
+                  </p>
+                </div>
+                <label className="inline-flex cursor-pointer items-center gap-sm rounded-lg border border-outline-variant bg-surface-container-low px-md py-sm">
+                  <input
+                    checked={Boolean(selectedCourse.isPrivate)}
+                    disabled={!firebaseReady || savingPermissions}
+                    onChange={(e) =>
+                      void handleToggleCoursePrivate(selectedCourse, e.target.checked)
+                    }
+                    type="checkbox"
+                  />
+                  <span className="font-label-md text-label-md">
+                    Private course
+                  </span>
+                </label>
+              </div>
+
+              {permissionError && (
+                <p
+                  className="mb-md rounded-lg border border-error/30 bg-error-container/20 px-md py-sm font-body-sm text-body-sm text-error"
+                  role="alert"
+                >
+                  {permissionError}
+                </p>
+              )}
+
+              {selectedCourse.isPrivate ? (
+                <>
+                  <div className="mb-md flex flex-col gap-sm sm:flex-row">
+                    <input
+                      className="flex-1 rounded-lg border border-outline-variant bg-surface-container-low p-sm text-body-sm text-on-surface dark:border-outline dark:bg-surface-container"
+                      disabled={savingPermissions}
+                      onChange={(e) => setPermissionEmailInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void handleAddAllowedEmail();
+                        }
+                      }}
+                      placeholder="student@email.com"
+                      type="email"
+                      value={permissionEmailInput}
+                    />
+                    <button
+                      className="rounded-lg bg-secondary px-md py-sm font-label-md text-label-md text-on-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={
+                        !firebaseReady ||
+                        savingPermissions ||
+                        !permissionEmailInput.trim()
+                      }
+                      onClick={() => void handleAddAllowedEmail()}
+                      type="button"
+                    >
+                      {savingPermissions ? "Saving..." : "Add email"}
+                    </button>
+                  </div>
+
+                  {(selectedCourse.allowedEmails ?? []).length === 0 ? (
+                    <p className="rounded-lg border border-outline-variant/60 px-md py-md font-body-sm text-body-sm text-on-surface-variant">
+                      Walang naka-allow na email. Private ito — walang student ang
+                      makakakita hangga&apos;t hindi ka magdagdag.
+                    </p>
+                  ) : (
+                    <ul className="space-y-sm">
+                      {(selectedCourse.allowedEmails ?? []).map((email) => (
+                        <li
+                          key={email}
+                          className="flex items-center justify-between gap-sm rounded-lg border border-outline-variant bg-surface-container-low px-md py-sm"
+                        >
+                          <span className="break-all font-body-sm text-body-sm">
+                            {email}
+                          </span>
+                          <button
+                            className="shrink-0 rounded border border-error px-sm py-1 font-label-sm text-label-sm text-error hover:bg-error-container disabled:opacity-40"
+                            disabled={!firebaseReady || savingPermissions}
+                            onClick={() => void handleRemoveAllowedEmail(email)}
+                            type="button"
+                          >
+                            Remove
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : (
+                <p className="font-body-sm text-body-sm text-on-surface-variant">
+                  Public — lahat ng enrolled students ay makikita ang course na ito.
+                  I-on ang &quot;Private course&quot; para limitahan sa specific emails.
+                </p>
+              )}
             </section>
           )}
 

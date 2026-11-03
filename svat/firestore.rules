@@ -69,9 +69,26 @@ service cloud.firestore {
         && userProfileData().get('isBlocked', false) != true;
     }
 
-    // Course content is readable only by admins or enrolled, active students.
-    function canAccessContent() {
-      return canManageAdminContent() || isEnrolled();
+    function courseData(courseId) {
+      return get(/databases/$(database)/documents/courses/$(courseId)).data;
+    }
+
+    // Student-facing private-course check (admins bypass at the match level).
+    function studentCanViewCourseData(data) {
+      return isEnrolled()
+        && (
+          data.get('isPrivate', false) != true
+          || (
+            request.auth.token.email != null
+            && data.get('allowedEmails', []) is list
+            && request.auth.token.email.lower() in data.get('allowedEmails', [])
+          )
+        );
+    }
+
+    function studentCanViewCourseById(courseId) {
+      return exists(/databases/$(database)/documents/courses/$(courseId))
+        && studentCanViewCourseData(courseData(courseId));
     }
 
     match /role/{roleId} {
@@ -116,17 +133,19 @@ service cloud.firestore {
     }
 
     match /courses/{id} {
-      allow read: if canAccessContent();
+      // Admins always read; students only if public or allowlisted.
+      allow read: if canManageAdminContent() || studentCanViewCourseData(resource.data);
       allow write: if canManageAdminContent();
     }
 
     match /chapters/{id} {
-      allow read: if canAccessContent();
+      // Admin bypass first so orphan chapters never block the admin curriculum list.
+      allow read: if canManageAdminContent() || studentCanViewCourseById(resource.data.courseId);
       allow write: if canManageAdminContent();
     }
 
     match /episodes/{id} {
-      allow read: if canAccessContent();
+      allow read: if canManageAdminContent() || studentCanViewCourseById(resource.data.courseId);
       allow write: if canManageAdminContent();
     }
 
