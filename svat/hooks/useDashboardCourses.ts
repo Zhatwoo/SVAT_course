@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { FirebaseError } from "firebase/app";
 import { useAuth } from "@/contexts/AuthContext";
 import { repairStudentEnrollment, readStudentAccessCodeHint } from "@/lib/firestore/accessCodes";
-import { getCourses } from "@/lib/firestore/courses";
-import { getEpisodes } from "@/lib/firestore/episodes";
+import { getVisibleCourses } from "@/lib/firestore/courses";
+import { getEpisodesByCourse } from "@/lib/firestore/episodes";
 import {
   getCourseProgressPercent,
   getFirstIncompleteEpisode,
@@ -73,13 +73,17 @@ export function useDashboardCourses() {
           }
         }
 
-        const [courseData, episodeData] = await Promise.all([
-          getCourses(),
-          getEpisodes(),
-        ]);
+        const courseData = await getVisibleCourses({
+          email: user?.email ?? profile?.email,
+          isAdmin: profile?.role === "admin",
+        });
+        const published = courseData.filter((c) => c.isPublished);
+        const episodeLists = await Promise.all(
+          published.map((course) => getEpisodesByCourse(course.id)),
+        );
         if (!active) return;
-        setCourses(courseData.filter((c) => c.isPublished));
-        setEpisodes(episodeData);
+        setCourses(published);
+        setEpisodes(episodeLists.flat());
       } catch (err) {
         if (!active) return;
         if (err instanceof FirebaseError && err.code === "permission-denied") {
@@ -98,7 +102,7 @@ export function useDashboardCourses() {
     return () => {
       active = false;
     };
-  }, [user, profile?.accessCodeUsed]);
+  }, [user, profile?.accessCodeUsed, profile?.email, profile?.role, user?.email]);
 
   useEffect(() => {
     if (!user) {
